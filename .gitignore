@@ -1,0 +1,32 @@
+# Environment secrets (use .env.enc for encrypted version)
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+
+# State files (runtime data)
+states/*.json
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code local settings
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# AWS credentials
+*.csv
+
+# Deployment guide (local only)
+DEPLOYMENT_GUIDE.md
+benchmark_analysis.md
+benchmark_analysis_v2.md

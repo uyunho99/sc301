@@ -1,0 +1,21 @@
+# SC301 Layer - Graph RAG 챗봇
+# Python 3.11+
+
+# OpenAI
+openai>=1.0.0
+
+# Neo4j
+neo4j>=5.0.0
+
+# RDF/TTL Parsing
+rdflib>=7.0.0
+
+# Environment
+python-dotenv>=1.0.0
+
+# Optional: Redis for state storage
+# redis>=5.0.0
+
+# Development
+# pytest>=7.0.0
+# pytest-asyncio>=0.21.0
