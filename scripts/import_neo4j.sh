@@ -34,8 +34,16 @@ fi
 if ! sudo systemctl is-active --quiet neo4j; then
     echo "Neo4j 시작 중..."
     sudo systemctl start neo4j
-    sleep 5
 fi
+
+echo "Neo4j 준비 대기 중..."
+for i in $(seq 1 30); do
+    if cypher-shell -u "$NEO4J_USER" -p "$NEO4J_PASS" -a "$NEO4J_URI" "RETURN 1;" > /dev/null 2>&1; then
+        echo "Neo4j 준비 완료."
+        break
+    fi
+    sleep 2
+done
 
 # 기존 데이터 삭제 확인
 echo "⚠ 기존 데이터를 모두 삭제하고 import 합니다."
