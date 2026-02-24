@@ -28,7 +28,7 @@ sudo apt-get install -y \
     build-essential
 
 # ─────────────────────────────────────
-# 2. Python 3.11+ 설치
+# 2. Python 3 + venv 패키지 설치
 # ─────────────────────────────────────
 echo ""
 echo "[2/6] Python 설치..."
@@ -38,16 +38,12 @@ else
     sudo add-apt-repository -y ppa:deadsnakes/ppa
     sudo apt-get update -y
     sudo apt-get install -y python3.11 python3.11-venv python3.11-distutils
-    # python3 기본 링크 설정
     sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
 fi
 python3 --version
 
-# pip 설치
-if ! command -v pip3 &> /dev/null; then
-    curl -sS https://bootstrap.pypa.io/get-pip.py | sudo python3
-fi
-pip3 --version
+# venv 패키지 설치 (Ubuntu 24.04 필수)
+sudo apt-get install -y python3-venv python3-pip
 
 # ─────────────────────────────────────
 # 3. Git 설치
@@ -112,11 +108,20 @@ elif [ ! -f ".env" ]; then
 fi
 
 # ─────────────────────────────────────
-# 6. Python 의존성 설치
+# 6. Python 가상환경 + 의존성 설치
 # ─────────────────────────────────────
 echo ""
-echo "[6/6] Python 패키지 설치..."
-pip3 install --user -r requirements.txt
+echo "[6/6] Python 가상환경 생성 + 패키지 설치..."
+VENV_DIR="$PROJECT_DIR/.venv"
+
+if [ ! -d "$VENV_DIR" ]; then
+    python3 -m venv "$VENV_DIR"
+    echo "가상환경 생성: $VENV_DIR"
+fi
+
+source "$VENV_DIR/bin/activate"
+pip install --upgrade pip
+pip install -r requirements.txt
 
 # ─────────────────────────────────────
 # 완료
@@ -127,13 +132,15 @@ echo "  세팅 완료!"
 echo "========================================="
 echo ""
 echo "프로젝트 경로 : $PROJECT_DIR"
+echo "가상환경 경로 : $VENV_DIR"
 echo "Neo4j (로컬)  : bolt://localhost:7687 (neo4j/password)"
 echo "Neo4j (Aura)  : .env 파일의 NEO4J_AURA_URI 참조"
 echo ""
 echo "실행 방법:"
 echo "  cd $PROJECT_DIR"
-echo "  python3 cli.py --db local chat   # 로컬 Neo4j"
-echo "  python3 cli.py --db aura chat    # AuraDB"
+echo "  source .venv/bin/activate"
+echo "  python cli.py --db local chat   # 로컬 Neo4j"
+echo "  python cli.py --db aura chat    # AuraDB"
 echo ""
 echo "Neo4j 상태 확인:"
 echo "  sudo systemctl status neo4j"
