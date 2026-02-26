@@ -1,6 +1,6 @@
 #!/bin/bash
 # Neo4j 데이터 복원 스크립트 (서버에서 실행)
-# .dump 파일 사용 (Community Edition 호환)
+# .dump 파일 사용 (Community Edition - aligned format)
 # 사용법: bash scripts/restore_neo4j.sh
 
 set -e
@@ -30,7 +30,7 @@ if [ -z "$DUMP_FILE" ] || [ ! -f "$DUMP_FILE" ]; then
     echo "  bash scripts/dump_neo4j_local.sh"
     echo ""
     echo "⚠ .backup 파일은 Enterprise Edition에서만 복원 가능합니다."
-    echo "  Neo4j Desktop에서 Dump(.dump)로 다시 생성해주세요."
+    echo "  Neo4j Desktop에서 dump_neo4j_local.sh 로 다시 생성해주세요."
     exit 1
 fi
 
@@ -52,29 +52,36 @@ fi
 # ─────────────────────────────────────
 # 3. Neo4j 중지
 # ─────────────────────────────────────
-echo "[1/3] Neo4j 중지..."
+echo "[1/4] Neo4j 중지..."
 sudo systemctl stop neo4j 2>/dev/null || true
 sleep 2
 
 # ─────────────────────────────────────
-# 4. 데이터 로드
+# 4. 데이터 로드 (neo4j 유저로 실행하여 권한 문제 방지)
 # ─────────────────────────────────────
-echo "[2/3] 데이터 로드..."
-sudo neo4j-admin database load "$DB_NAME" \
+echo "[2/4] 데이터 로드..."
+sudo -u neo4j neo4j-admin database load "$DB_NAME" \
     --from-path="$BACKUP_DIR" \
     --overwrite-destination=true
 
 echo "  ✅ 로드 완료"
 
 # ─────────────────────────────────────
-# 5. Neo4j 재시작
+# 5. 파일 권한 보정 (혹시 모를 권한 문제 방지)
 # ─────────────────────────────────────
-echo "[3/3] Neo4j 재시작..."
+echo "[3/4] 파일 권한 확인..."
+sudo chown -R neo4j:neo4j /var/lib/neo4j/data/databases/"$DB_NAME" 2>/dev/null || true
+sudo chown -R neo4j:neo4j /var/lib/neo4j/data/transactions/"$DB_NAME" 2>/dev/null || true
+
+# ─────────────────────────────────────
+# 6. Neo4j 재시작
+# ─────────────────────────────────────
+echo "[4/4] Neo4j 재시작..."
 sudo systemctl start neo4j
 sleep 5
 
 # ─────────────────────────────────────
-# 6. 상태 확인
+# 7. 상태 확인
 # ─────────────────────────────────────
 if sudo systemctl is-active --quiet neo4j; then
     echo ""
@@ -87,8 +94,8 @@ if sudo systemctl is-active --quiet neo4j; then
 
     # 노드 수 확인 (cypher-shell 있는 경우)
     if command -v cypher-shell &> /dev/null; then
-        echo "데이터 확인:"
-        for i in $(seq 1 10); do
+        echo "데이터 확인 (Neo4j 준비 대기 중...):"
+        for i in $(seq 1 15); do
             if cypher-shell -u neo4j -p password -a bolt://localhost:7687 \
                 "MATCH (n) RETURN labels(n)[0] AS label, count(n) AS cnt ORDER BY cnt DESC;" 2>/dev/null; then
                 break
