@@ -116,6 +116,32 @@ if sudo systemctl is-active --quiet neo4j; then
         done
     fi
 
+    # ─────────────────────────────────────
+    # 벡터 인덱스 생성 + 임베딩 생성
+    # ─────────────────────────────────────
+    echo ""
+    echo "[5/5] 벡터 인덱스 및 임베딩 생성 중..."
+    cd "$PROJECT_DIR"
+    if [ -f ".venv/bin/activate" ]; then
+        source .venv/bin/activate
+    fi
+    python3 cli.py setup-schema --db local
+    python3 -c "
+import sys, os
+sys.path.insert(0, '.')
+os.environ.setdefault('NEO4J_URI', 'bolt://localhost:7687')
+os.environ.setdefault('NEO4J_USER', 'neo4j')
+os.environ.setdefault('NEO4J_PASSWORD', 'password')
+from dotenv import load_dotenv
+load_dotenv()
+from core import GraphRAGCore, CoreConfig
+config = CoreConfig.from_env(db_mode='local')
+core = GraphRAGCore(config)
+core._create_embeddings()
+core.close()
+"
+    echo "  ✅ 벡터 인덱스 + 임베딩 생성 완료"
+
     echo ""
     echo "실행: python cli.py --db local chat"
 else

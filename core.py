@@ -663,20 +663,47 @@ class Core:
 
         with self.driver.session() as session:
             # Surgery 임베딩
-            result = session.run("MATCH (s:Surgery) RETURN s.id AS id, s.name AS name, s.desc AS desc")
+            result = list(session.run(
+                "MATCH (s:Surgery) WHERE s.embedding IS NULL RETURN s.id AS id, s.name AS name, s.desc AS desc"
+            ))
             for record in result:
                 text = f"{record['name']}: {record['desc'] or ''}"
                 if text.strip():
                     embedding = self.embed(text)
                     session.run(QUERY_UPDATE_EMBEDDING, id=record["id"], embedding=embedding)
+            if result:
+                logger.info(f"Surgery 임베딩 생성: {len(result)}건")
 
             # Step 임베딩
-            result = session.run("MATCH (s:Step) RETURN s.id AS id, s.desc AS desc, s.type AS stepType")
+            result = list(session.run(
+                "MATCH (s:Step) WHERE s.embedding IS NULL RETURN s.id AS id, s.desc AS desc, s.type AS stepType, s.name AS name"
+            ))
             for record in result:
-                text = f"[{record['stepType'] or ''}] {record['desc'] or ''}"
+                text_parts = []
+                if record["name"]:
+                    text_parts.append(record["name"])
+                if record["stepType"]:
+                    text_parts.append(f"[{record['stepType']}]")
+                if record["desc"]:
+                    text_parts.append(record["desc"])
+                text = " ".join(text_parts)
                 if text.strip():
                     embedding = self.embed(text)
                     session.run(QUERY_UPDATE_EMBEDDING, id=record["id"], embedding=embedding)
+            if result:
+                logger.info(f"Step 임베딩 생성: {len(result)}건")
+
+            # CheckItem 임베딩
+            result = list(session.run(
+                "MATCH (c:CheckItem) WHERE c.embedding IS NULL RETURN c.id AS id, c.name AS name"
+            ))
+            for record in result:
+                text = record["name"] or record["id"]
+                if text.strip():
+                    embedding = self.embed(text)
+                    session.run(QUERY_UPDATE_EMBEDDING, id=record["id"], embedding=embedding)
+            if result:
+                logger.info(f"CheckItem 임베딩 생성: {len(result)}건")
 
         logger.info("Embeddings 생성 완료")
 
