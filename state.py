@@ -26,6 +26,10 @@ class ConversationState:
     step_history: list[str] = field(default_factory=list)
     prefetch_slots: dict[str, Any] = field(default_factory=dict)
     persona_disambiguation: dict | None = None
+    # --- 상담 Persona (톤/전략 레이어, Flow 무관) ---
+    consultation_persona: str | None = None  # 확정된 상담 페르소나 (desire/body/social/service)
+    consultation_scores: dict[str, float] = field(default_factory=dict)  # 누적 스코어
+    consultation_signals: list[dict] = field(default_factory=list)  # 턴별 신호 로그
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
     
@@ -138,6 +142,9 @@ class ConversationState:
             "step_turn_count": self.step_turn_count,
             "step_history": self.step_history,
             "persona_disambiguation": self.persona_disambiguation,
+            "consultation_persona": self.consultation_persona,
+            "consultation_scores": self.consultation_scores,
+            "consultation_signals": self.consultation_signals,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -156,6 +163,9 @@ class ConversationState:
             step_turn_count=data.get("step_turn_count", 0),
             step_history=data.get("step_history", []),
             persona_disambiguation=data.get("persona_disambiguation"),
+            consultation_persona=data.get("consultation_persona"),
+            consultation_scores=data.get("consultation_scores", {}),
+            consultation_signals=data.get("consultation_signals", []),
             created_at=data.get("created_at", datetime.now().isoformat()),
             updated_at=data.get("updated_at", datetime.now().isoformat()),
         )

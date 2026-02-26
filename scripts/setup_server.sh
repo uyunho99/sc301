@@ -20,7 +20,7 @@ echo "작업 디렉토리: $HOME"
 # 1. 시스템 패키지 업데이트 + 기본 도구
 # ─────────────────────────────────────
 echo ""
-echo "[1/6] 시스템 패키지 업데이트..."
+echo "[1/7] 시스템 패키지 업데이트..."
 sudo apt-get update -y
 sudo apt-get install -y \
     software-properties-common \
@@ -31,7 +31,7 @@ sudo apt-get install -y \
 # 2. Python 3 + venv 패키지 설치
 # ─────────────────────────────────────
 echo ""
-echo "[2/6] Python 설치..."
+echo "[2/7] Python 설치..."
 if python3 --version 2>/dev/null | grep -qE "3\.(11|12|13)"; then
     echo "Python 이미 설치됨: $(python3 --version)"
 else
@@ -49,7 +49,7 @@ sudo apt-get install -y python3-venv python3-pip
 # 3. Git 설치
 # ─────────────────────────────────────
 echo ""
-echo "[3/6] Git 설치..."
+echo "[3/7] Git 설치..."
 if ! command -v git &> /dev/null; then
     sudo apt-get install -y git
 fi
@@ -59,7 +59,7 @@ git --version
 # 4. Neo4j 설치 (Community Edition)
 # ─────────────────────────────────────
 echo ""
-echo "[4/6] Neo4j 설치..."
+echo "[4/7] Neo4j 설치..."
 if command -v neo4j &> /dev/null; then
     echo "Neo4j 이미 설치됨: $(neo4j --version 2>/dev/null || echo 'installed')"
 else
@@ -86,7 +86,7 @@ fi
 # 5. 프로젝트 클론 + .env 복호화
 # ─────────────────────────────────────
 echo ""
-echo "[5/6] 프로젝트 클론..."
+echo "[5/7] 프로젝트 클론..."
 REPO_URL="https://github.com/uyunho99/sc301.git"
 PROJECT_DIR="$HOME/sc301"
 
@@ -111,7 +111,7 @@ fi
 # 6. Python 가상환경 + 의존성 설치
 # ─────────────────────────────────────
 echo ""
-echo "[6/6] Python 가상환경 생성 + 패키지 설치..."
+echo "[6/7] Python 가상환경 생성 + 패키지 설치..."
 VENV_DIR="$PROJECT_DIR/.venv"
 
 if [ ! -d "$VENV_DIR" ]; then
@@ -122,6 +122,18 @@ fi
 source "$VENV_DIR/bin/activate"
 pip install --upgrade pip
 pip install -r requirements.txt
+
+# ─────────────────────────────────────
+# 7. Neo4j 데이터 복원 (.dump 파일)
+# ─────────────────────────────────────
+echo ""
+echo "[7/7] Neo4j 데이터 복원..."
+if ls "$PROJECT_DIR/backups/"*.dump 1>/dev/null 2>&1; then
+    bash "$PROJECT_DIR/scripts/restore_neo4j.sh"
+else
+    echo "⚠ backups/*.dump 파일 없음. 수동 복원 필요:"
+    echo "  bash scripts/restore_neo4j.sh"
+fi
 
 # ─────────────────────────────────────
 # 완료

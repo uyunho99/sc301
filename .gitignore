@@ -27,6 +27,10 @@ Thumbs.db
 # AWS credentials
 *.csv
 
+# Neo4j backup artifacts (Enterprise-only format, not portable)
+backups/*.backup
+backups/*.bak
+
 # Deployment guide (local only)
 DEPLOYMENT_GUIDE.md
 SERVER_GUIDE.md

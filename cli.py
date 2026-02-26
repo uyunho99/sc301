@@ -76,6 +76,7 @@ def get_flow_engine(
     core: Core,
     fast_mode: bool = False,
     model_override: str | None = None,
+    consultation_scoring_mode: str = "hybrid",
 ) -> FlowEngine:
     """
     FlowEngine 인스턴스 생성 (비동기 클라이언트 포함)
@@ -84,6 +85,7 @@ def get_flow_engine(
         core: Core 인스턴스
         fast_mode: True면 gpt-4o-mini로 slot 추출, 응답 토큰 제한 적용
         model_override: "gpt-4o" 또는 "gpt-5" — 지정 시 .env 설정 무시
+        consultation_scoring_mode: "hybrid" | "llm" | "off"
     """
     # 모델 결정: --model 인자 > .env 값
     if model_override and model_override in MODEL_PRESETS:
@@ -110,6 +112,7 @@ def get_flow_engine(
         async_openai_client=core.async_openai,
         slot_extraction_model=slot_model,
         max_response_tokens=max_tokens,
+        consultation_scoring_mode=consultation_scoring_mode,
     )
 
 
@@ -178,8 +181,13 @@ def cmd_turn(args):
         state = ConversationState(session_id=session_id)
         print(f"🆕 새 세션 생성: {session_id}")
 
+    consultation_mode = getattr(args, "consultation_scoring", "hybrid")
+
     with get_core(db_mode) as core:
-        flow = get_flow_engine(core, model_override=model_override)
+        flow = get_flow_engine(
+            core, model_override=model_override,
+            consultation_scoring_mode=consultation_mode,
+        )
 
         # 턴 처리
         response, state = flow.process_turn(state, user_text, core=core)
@@ -200,6 +208,7 @@ def cmd_repl(args):
     fast_mode = args.fast  # --fast 옵션
     db_mode = args.db
     model_override = getattr(args, "model", None)
+    consultation_mode = getattr(args, "consultation_scoring", "hybrid")
 
     storage = get_state_storage()
 
@@ -220,10 +229,15 @@ def cmd_repl(args):
         print("📡 스트리밍 모드 활성화")
     if fast_mode:
         print("⚡ Fast 모드 활성화 (gpt-4o-mini로 slot 추출)")
+    if consultation_mode != "off":
+        print(f"🎭 상담 Persona 스코어링: {consultation_mode} 모드")
     print("종료하려면 'quit' 또는 'exit'를 입력하세요.\n")
 
     with get_core(db_mode) as core:
-        flow = get_flow_engine(core, fast_mode=fast_mode, model_override=model_override)
+        flow = get_flow_engine(
+            core, fast_mode=fast_mode, model_override=model_override,
+            consultation_scoring_mode=consultation_mode,
+        )
 
         # 초기 메시지 (시나리오가 없으면)
         if not state.is_started():
@@ -246,7 +260,16 @@ def cmd_repl(args):
                     print(f"  Persona: {state.persona_id}")
                     print(f"  Scenario: {state.scenario_id}")
                     print(f"  Step: {state.current_step_id}")
-                    print(f"  Slots: {state.get_filled_slots()}\n")
+                    print(f"  Slots: {state.get_filled_slots()}")
+                    # 상담 Persona 정보
+                    if state.consultation_scores:
+                        print(f"  --- 상담 Persona ---")
+                        print(f"  확정: {state.consultation_persona or '미확정'}")
+                        scores_str = ", ".join(
+                            f"{k}={v:.1f}" for k, v in state.consultation_scores.items()
+                        )
+                        print(f"  스코어: {scores_str}")
+                    print()
                     continue
 
                 if user_input.lower() == "/reset":
@@ -278,8 +301,10 @@ def cmd_repl(args):
                     response = ""
                     for item in flow.process_turn_streaming(state, user_input, core=core):
                         if isinstance(item, str):
-                            print(item, end="", flush=True)
-                            response += item
+                            # surrogate 문자 제거 (AWS 등 locale 미설정 환경 대응)
+                            safe = item.encode("utf-8", errors="replace").decode("utf-8")
+                            print(safe, end="", flush=True)
+                            response += safe
                         else:
                             # 마지막 반환값 (response, state)
                             response, state = item
@@ -309,6 +334,7 @@ async def _repl_async(args):
     """비동기 REPL 내부 구현"""
     session_id = args.session_id or str(uuid.uuid4())[:8]
     db_mode = args.db
+    consultation_mode = getattr(args, "consultation_scoring", "hybrid")
 
     storage = get_state_storage()
 
@@ -319,10 +345,12 @@ async def _repl_async(args):
 
     print(f"🚀 SC301 챗봇 비동기 REPL 시작 (세션: {session_id})")
     print(f"🗄️  Neo4j: {db_mode.upper()} 모드")
+    if consultation_mode != "off":
+        print(f"🎭 상담 Persona 스코어링: {consultation_mode} 모드")
     print("종료하려면 'quit' 또는 'exit'를 입력하세요.\n")
 
     core = get_core(db_mode)
-    flow = get_flow_engine(core)
+    flow = get_flow_engine(core, consultation_scoring_mode=consultation_mode)
 
     try:
         # 초기 메시지
@@ -347,7 +375,15 @@ async def _repl_async(args):
                     print(f"  Persona: {state.persona_id}")
                     print(f"  Scenario: {state.scenario_id}")
                     print(f"  Step: {state.current_step_id}")
-                    print(f"  Slots: {state.get_filled_slots()}\n")
+                    print(f"  Slots: {state.get_filled_slots()}")
+                    if state.consultation_scores:
+                        print(f"  --- 상담 Persona ---")
+                        print(f"  확정: {state.consultation_persona or '미확정'}")
+                        scores_str = ", ".join(
+                            f"{k}={v:.1f}" for k, v in state.consultation_scores.items()
+                        )
+                        print(f"  스코어: {scores_str}")
+                    print()
                     continue
 
                 if user_input.lower() == "/reset":
@@ -442,6 +478,10 @@ def main():
     db_parent.add_argument(
         "--model", choices=["gpt-4o", "gpt-5"], default=None,
         help="LLM 모델 선택 (기본: .env 설정값 gpt-4o)"
+    )
+    db_parent.add_argument(
+        "--consultation-scoring", choices=["hybrid", "llm", "off"], default="hybrid",
+        help="상담 Persona 스코어링 모드 (기본: hybrid)"
     )
 
     # setup-schema
