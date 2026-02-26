@@ -50,31 +50,44 @@ if [ "$DUMP_FILE" != "$EXPECTED" ]; then
 fi
 
 # ─────────────────────────────────────
-# 3. Neo4j 중지
+# 3. dump 파일을 neo4j 유저가 접근 가능한 경로로 복사
+#    (neo4j 유저는 /home/ssm-user/ 접근 불가)
+# ─────────────────────────────────────
+LOAD_DIR="/tmp/neo4j-restore"
+sudo rm -rf "$LOAD_DIR"
+sudo mkdir -p "$LOAD_DIR"
+sudo cp "$EXPECTED" "$LOAD_DIR/${DB_NAME}.dump"
+sudo chown -R neo4j:neo4j "$LOAD_DIR"
+
+# ─────────────────────────────────────
+# 4. Neo4j 중지
 # ─────────────────────────────────────
 echo "[1/4] Neo4j 중지..."
 sudo systemctl stop neo4j 2>/dev/null || true
 sleep 2
 
 # ─────────────────────────────────────
-# 4. 데이터 로드 (neo4j 유저로 실행하여 권한 문제 방지)
+# 5. 데이터 로드 (neo4j 유저로 실행)
 # ─────────────────────────────────────
 echo "[2/4] 데이터 로드..."
 sudo -u neo4j neo4j-admin database load "$DB_NAME" \
-    --from-path="$BACKUP_DIR" \
+    --from-path="$LOAD_DIR" \
     --overwrite-destination=true
 
 echo "  ✅ 로드 완료"
 
+# 임시 디렉토리 정리
+sudo rm -rf "$LOAD_DIR"
+
 # ─────────────────────────────────────
-# 5. 파일 권한 보정 (혹시 모를 권한 문제 방지)
+# 6. 파일 권한 보정
 # ─────────────────────────────────────
 echo "[3/4] 파일 권한 확인..."
 sudo chown -R neo4j:neo4j /var/lib/neo4j/data/databases/"$DB_NAME" 2>/dev/null || true
 sudo chown -R neo4j:neo4j /var/lib/neo4j/data/transactions/"$DB_NAME" 2>/dev/null || true
 
 # ─────────────────────────────────────
-# 6. Neo4j 재시작
+# 7. Neo4j 재시작
 # ─────────────────────────────────────
 echo "[4/4] Neo4j 재시작..."
 sudo systemctl start neo4j
