@@ -1,6 +1,9 @@
 # Environment secrets (use .env.enc for encrypted version)
 .env
 
+# SSH
+.ssh/
+
 # Python
 __pycache__/
 *.py[cod]

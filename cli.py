@@ -27,6 +27,7 @@ import sys
 import os
 import uuid
 import asyncio
+import traceback
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -322,6 +323,7 @@ def cmd_repl(args):
                 break
             except Exception as e:
                 logger.error(f"오류 발생: {e}")
+                traceback.print_exc()
                 print(f"❌ 오류가 발생했습니다: {e}\n")
 
 
@@ -405,6 +407,7 @@ async def _repl_async(args):
                 break
             except Exception as e:
                 logger.error(f"오류 발생: {e}")
+                traceback.print_exc()
                 print(f"❌ 오류가 발생했습니다: {e}\n")
     finally:
         core.close()

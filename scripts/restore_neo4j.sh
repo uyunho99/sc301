@@ -67,12 +67,18 @@ sudo systemctl stop neo4j 2>/dev/null || true
 sleep 2
 
 # ─────────────────────────────────────
-# 5. 데이터 로드 (neo4j 유저로 실행)
+# 5. 기존 DB 파일 제거 (이전 실패로 root 소유 파일이 남아있으면 덮어쓰기 불가)
 # ─────────────────────────────────────
-echo "[2/4] 데이터 로드..."
+echo "[2/4] 기존 DB 정리..."
+sudo rm -rf /var/lib/neo4j/data/databases/"$DB_NAME"
+sudo rm -rf /var/lib/neo4j/data/transactions/"$DB_NAME"
+
+# ─────────────────────────────────────
+# 6. 데이터 로드 (neo4j 유저로 실행)
+# ─────────────────────────────────────
+echo "[3/4] 데이터 로드..."
 sudo -u neo4j neo4j-admin database load "$DB_NAME" \
-    --from-path="$LOAD_DIR" \
-    --overwrite-destination=true
+    --from-path="$LOAD_DIR"
 
 echo "  ✅ 로드 완료"
 
@@ -80,14 +86,7 @@ echo "  ✅ 로드 완료"
 sudo rm -rf "$LOAD_DIR"
 
 # ─────────────────────────────────────
-# 6. 파일 권한 보정
-# ─────────────────────────────────────
-echo "[3/4] 파일 권한 확인..."
-sudo chown -R neo4j:neo4j /var/lib/neo4j/data/databases/"$DB_NAME" 2>/dev/null || true
-sudo chown -R neo4j:neo4j /var/lib/neo4j/data/transactions/"$DB_NAME" 2>/dev/null || true
-
-# ─────────────────────────────────────
-# 7. Neo4j 재시작
+# 8. Neo4j 재시작
 # ─────────────────────────────────────
 echo "[4/4] Neo4j 재시작..."
 sudo systemctl start neo4j
