@@ -55,14 +55,41 @@ def export_database():
             var = f"n{i}"
             node_id_map[node["eid"]] = var
             labels_str = ":" + ":".join(node["labels"]) if node["labels"] else ""
-            props_str = serialize_props(node["props"])
+            # embedding 프로퍼티 제외 (복원 후 _create_embeddings()로 새로 생성)
+            props = {k: v for k, v in node["props"].items() if k != "embedding"}
+            props_str = serialize_props(props)
             lines.append(f"CREATE ({var}{labels_str} {props_str});")
 
         print(f"  노드 {len(nodes)}개")
         lines.append("")
 
         # ─── 4. 모든 관계 내보내기 ───
+        # cypher-shell은 문(statement) 단위로 실행하므로 변수 참조가 불가.
+        # 노드 index(순서) → 고유 식별 MATCH 문으로 관계를 생성한다.
         print("[4/4] 관계 내보내기...")
+
+        # elementId → (labels, 고유 식별 프로퍼티) 매핑 구축
+        node_match_map = {}  # elementId -> MATCH 패턴 문자열
+        for node in nodes:
+            eid = node["eid"]
+            labels = node["labels"]
+            props = node["props"]
+            label_str = ":" + ":".join(labels) if labels else ""
+
+            # 고유 식별자 결정: id > uri > 전체 프로퍼티
+            if "id" in props:
+                match_props = serialize_props({"id": props["id"]})
+            elif "uri" in props:
+                match_props = serialize_props({"uri": props["uri"]})
+            else:
+                # _GraphConfig, _NsPrefDef 등 id/uri 없는 노드
+                match_key = next(iter(props), None)
+                if match_key:
+                    match_props = serialize_props({match_key: props[match_key]})
+                else:
+                    match_props = "{}"
+            node_match_map[eid] = f"(n{label_str} {match_props})"
+
         rels = session.run("""
             MATCH (a)-[r]->(b)
             RETURN elementId(a) AS src, elementId(b) AS dst,
@@ -70,15 +97,17 @@ def export_database():
         """).data()
 
         for rel in rels:
-            src_var = node_id_map.get(rel["src"])
-            dst_var = node_id_map.get(rel["dst"])
-            if not src_var or not dst_var:
+            src_match = node_match_map.get(rel["src"])
+            dst_match = node_match_map.get(rel["dst"])
+            if not src_match or not dst_match:
                 continue
             props_str = serialize_props(rel["props"])
+            src_pat = src_match.replace("(n", "(a")
+            dst_pat = dst_match.replace("(n", "(b")
             if props_str != "{}":
-                lines.append(f"CREATE ({src_var})-[:{rel['type']} {props_str}]->({dst_var});")
+                lines.append(f"MATCH {src_pat}, {dst_pat} CREATE (a)-[:{rel['type']} {props_str}]->(b);")
             else:
-                lines.append(f"CREATE ({src_var})-[:{rel['type']}]->({dst_var});")
+                lines.append(f"MATCH {src_pat}, {dst_pat} CREATE (a)-[:{rel['type']}]->(b);")
 
         print(f"  관계 {len(rels)}개")
 

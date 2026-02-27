@@ -62,21 +62,21 @@ sudo chown -R neo4j:neo4j "$LOAD_DIR"
 # ─────────────────────────────────────
 # 4. Neo4j 중지
 # ─────────────────────────────────────
-echo "[1/4] Neo4j 중지..."
+echo "[1/5] Neo4j 중지..."
 sudo systemctl stop neo4j 2>/dev/null || true
 sleep 2
 
 # ─────────────────────────────────────
 # 5. 기존 DB 파일 제거 (이전 실패로 root 소유 파일이 남아있으면 덮어쓰기 불가)
 # ─────────────────────────────────────
-echo "[2/4] 기존 DB 정리..."
+echo "[2/5] 기존 DB 정리..."
 sudo rm -rf /var/lib/neo4j/data/databases/"$DB_NAME"
 sudo rm -rf /var/lib/neo4j/data/transactions/"$DB_NAME"
 
 # ─────────────────────────────────────
 # 6. 데이터 로드 (neo4j 유저로 실행)
 # ─────────────────────────────────────
-echo "[3/4] 데이터 로드..."
+echo "[3/5] 데이터 로드..."
 sudo -u neo4j neo4j-admin database load "$DB_NAME" \
     --from-path="$LOAD_DIR"
 
@@ -86,14 +86,14 @@ echo "  ✅ 로드 완료"
 sudo rm -rf "$LOAD_DIR"
 
 # ─────────────────────────────────────
-# 8. Neo4j 재시작
+# 7. Neo4j 재시작
 # ─────────────────────────────────────
-echo "[4/4] Neo4j 재시작..."
+echo "[4/5] Neo4j 재시작..."
 sudo systemctl start neo4j
 sleep 5
 
 # ─────────────────────────────────────
-# 7. 상태 확인
+# 8. 상태 확인 + 벡터 인덱스/임베딩
 # ─────────────────────────────────────
 if sudo systemctl is-active --quiet neo4j; then
     echo ""
@@ -134,9 +134,9 @@ os.environ.setdefault('NEO4J_USER', 'neo4j')
 os.environ.setdefault('NEO4J_PASSWORD', 'password')
 from dotenv import load_dotenv
 load_dotenv()
-from core import GraphRAGCore, CoreConfig
+from core import Core, CoreConfig
 config = CoreConfig.from_env(db_mode='local')
-core = GraphRAGCore(config)
+core = Core(config)
 core._create_embeddings()
 core.close()
 "

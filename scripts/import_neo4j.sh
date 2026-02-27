@@ -72,3 +72,26 @@ echo ""
 echo "데이터 확인:"
 cypher-shell -u "$NEO4J_USER" -p "$NEO4J_PASS" -a "$NEO4J_URI" \
     "MATCH (n) RETURN labels(n)[0] AS label, count(n) AS count ORDER BY count DESC;"
+
+# ─────────────────────────────────────
+# 벡터 인덱스 생성 + 임베딩 생성
+# ─────────────────────────────────────
+echo ""
+echo "[3/3] 벡터 인덱스 및 임베딩 생성 중..."
+cd "$PROJECT_DIR"
+if [ -f ".venv/bin/activate" ]; then
+    source .venv/bin/activate
+fi
+python3 cli.py setup-schema --db local
+python3 -c "
+import sys, os
+sys.path.insert(0, '.')
+from dotenv import load_dotenv
+load_dotenv()
+from core import Core, CoreConfig
+config = CoreConfig.from_env(db_mode='local')
+core = Core(config)
+core._create_embeddings()
+core.close()
+"
+echo "  ✅ 벡터 인덱스 + 임베딩 생성 완료"

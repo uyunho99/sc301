@@ -1,0 +1,17 @@
+:use neo4j-aligned;
+CREATE VECTOR INDEX `surgery_embedding` FOR (n:`Surgery`) ON (n.`embedding`) OPTIONS {indexConfig: {`vector.dimensions`: 1536, `vector.hnsw.ef_construction`: 100, `vector.hnsw.m`: 16, `vector.quantization.enabled`: true, `vector.similarity_function`: 'COSINE'}};
+CREATE VECTOR INDEX `step_embedding` FOR (n:`Step`) ON (n.`embedding`) OPTIONS {indexConfig: {`vector.dimensions`: 1536, `vector.hnsw.ef_construction`: 100, `vector.hnsw.m`: 16, `vector.quantization.enabled`: true, `vector.similarity_function`: 'COSINE'}};
+CREATE VECTOR INDEX `checkitem_embedding` FOR (n:`CheckItem`) ON (n.`embedding`) OPTIONS {indexConfig: {`vector.dimensions`: 1536, `vector.hnsw.ef_construction`: 100, `vector.hnsw.m`: 16, `vector.quantization.enabled`: true, `vector.similarity_function`: 'COSINE'}};
+CREATE CONSTRAINT `n10s_unique_uri` FOR (n:`Resource`) REQUIRE (n.`uri`) IS UNIQUE OPTIONS {};
+CREATE CONSTRAINT `sideeffect_id_unique` FOR (n:`SideEffect`) REQUIRE (n.`id`) IS UNIQUE OPTIONS {};
+CREATE CONSTRAINT `persona_id_unique` FOR (n:`Persona`) REQUIRE (n.`id`) IS UNIQUE OPTIONS {};
+CREATE CONSTRAINT `checkitem_id_unique` FOR (n:`CheckItem`) REQUIRE (n.`id`) IS UNIQUE OPTIONS {};
+CREATE CONSTRAINT `program_id_unique` FOR (n:`Program`) REQUIRE (n.`id`) IS UNIQUE OPTIONS {};
+CREATE CONSTRAINT `constraint_4d36f7ae` FOR (n:`Scenario`) REQUIRE (n.`id`) IS UNIQUE OPTIONS {};
+CREATE CONSTRAINT `constraint_895de655` FOR (n:`Step`) REQUIRE (n.`id`) IS UNIQUE OPTIONS {};
+CREATE CONSTRAINT `constraint_da7bfba8` FOR (n:`Surgery`) REQUIRE (n.`id`) IS UNIQUE OPTIONS {};
+CREATE CONSTRAINT `constraint_5ceba44f` FOR (n:`Transition`) REQUIRE (n.`id`) IS UNIQUE OPTIONS {};
+CREATE CONSTRAINT `constraint_49bf0423` FOR (n:`DecisionRule`) REQUIRE (n.`id`) IS UNIQUE OPTIONS {};
+CREATE CONSTRAINT `constraint_100096e9` FOR (n:`ConditionGroup`) REQUIRE (n.`id`) IS UNIQUE OPTIONS {};
+CREATE CONSTRAINT `constraint_6898a576` FOR (n:`Condition`) REQUIRE (n.`id`) IS UNIQUE OPTIONS {};
+CREATE CONSTRAINT `constraint_d35c303` FOR (n:`Threshold`) REQUIRE (n.`id`) IS UNIQUE OPTIONS {};
