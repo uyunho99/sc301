@@ -388,13 +388,14 @@ RETURN n.id AS id
 
 QUERY_MERGE_TRANSITION = """
 MERGE (t:Transition {id: $id})
-SET t.desc = $desc, t.priority = $priority, t.isDefault = $isDefault
+SET t.desc = $desc, t.priority = $priority, t.isDefault = $isDefault,
+    t.protocolMode = $protocolMode
 RETURN t.id AS id
 """
 
 QUERY_MERGE_DECISION_RULE = """
 MERGE (r:DecisionRule {id: $id})
-SET r.desc = $desc
+SET r.desc = $desc, r.logic = $logic
 RETURN r.id AS id
 """
 
@@ -452,6 +453,17 @@ QUERY_CREATE_REL_COMPARES_TO = """
 MATCH (c:Condition {id: $conditionId})
 MATCH (th:Threshold {id: $thresholdId})
 MERGE (c)-[:COMPARES_TO]->(th)
+"""
+
+# --- 런타임 분기 조회 (flow.py에서 사용) ---
+
+QUERY_STEP_TRANSITIONS = """
+MATCH (s:Step {id: $stepId})-[:HAS_TRANSITION]->(t:Transition)-[:TO]->(ns:Step)
+OPTIONAL MATCH (t)-[:GUARDED_BY]->(r:DecisionRule)
+RETURN t.id AS transitionId, t.priority AS priority, t.isDefault AS isDefault,
+       t.protocolMode AS protocolMode, ns.id AS targetStepId,
+       r.id AS ruleId, r.logic AS logic
+ORDER BY t.priority DESC
 """
 
 # =============================================================================

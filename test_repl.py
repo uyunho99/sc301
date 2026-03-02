@@ -37,12 +37,8 @@ load_dotenv()
 from neo4j import GraphDatabase
 from flow import FlowEngine
 from state import ConversationState
-from schema import (
-    BRANCHING_RULES,
-    AUTO_COMPUTABLE_SLOTS,
-    CONDITIONAL_SKIP_RULES,
-    SYSTEM_MANAGED_SLOTS,
-)
+# schema.py 상수는 engine 인스턴스 속성으로 접근 (Phase 1B-2)
+# fallback용 BRANCHING_RULES만 필요 시 지연 import
 
 # =============================================================================
 # 색상 유틸리티
@@ -669,6 +665,7 @@ TEST_SCENARIOS = {
 def verify_step_checkpoints(
     state: ConversationState,
     expected_path: list[str],
+    engine: FlowEngine,
 ) -> list[tuple[str, str]]:
     """
     시나리오 실행 후, 각 step의 필수 슬롯이 모두 수집되었는지 검증.
@@ -684,13 +681,13 @@ def verify_step_checkpoints(
 
         for slot_name in required:
             # SYSTEM_MANAGED: protocolMode 등 → 자동 설정되므로 검증 제외
-            if slot_name in SYSTEM_MANAGED_SLOTS:
+            if slot_name in engine._system_managed_slots:
                 continue
             # AUTO_COMPUTABLE: bmi, regionBucket → 자동 계산되므로 검증 제외
-            if slot_name in AUTO_COMPUTABLE_SLOTS:
+            if slot_name in engine._auto_compute:
                 continue
             # 조건부 스킵: 조건 충족 시 수집 불필요
-            skip_rule = CONDITIONAL_SKIP_RULES.get(slot_name)
+            skip_rule = engine._skip_rules.get(slot_name)
             if skip_rule:
                 when = skip_rule.get("when", {})
                 should_skip = False
@@ -799,7 +796,7 @@ def run_scenario_repl(
             for cid in check_ids:
                 if engine.should_skip_check_item(cid, state):
                     skippable.append(cid)
-                elif cid in AUTO_COMPUTABLE_SLOTS:
+                elif cid in engine._auto_compute:
                     auto.append(cid)
                 else:
                     required.append(cid)
@@ -813,11 +810,16 @@ def run_scenario_repl(
         else:
             print(dim(f"  │  (CheckItem 없음 - inform/finalize 단계)"))
 
-        # 분기점 여부
-        if current_step in BRANCHING_RULES:
-            rules = BRANCHING_RULES[current_step]
-            targets = list(set(r["targetStepId"] for r in rules))
+        # 분기점 여부: graph transitions 우선, 없으면 schema.py fallback
+        graph_trans = engine._get_step_transitions(current_step)
+        if graph_trans:
+            targets = list(set(t["targetStepId"] for t in graph_trans))
             print(dim(f"  │  분기점: ") + ", ".join(targets))
+        else:
+            from schema import BRANCHING_RULES as _BR
+            if current_step in _BR:
+                targets = list(set(r["targetStepId"] for r in _BR[current_step]))
+                print(dim(f"  │  분기점: ") + ", ".join(targets))
 
         # 사용자 발화 찾기 (현재 Step에 해당하는 턴)
         turn_data = None
@@ -947,7 +949,7 @@ def run_scenario_repl(
         print(f"  regionBucket: {ok(rb)}")
 
     # ── Layer 5: Step 체크포인트 완료도 검증 ──
-    checkpoint_missing = verify_step_checkpoints(state, expected_path)
+    checkpoint_missing = verify_step_checkpoints(state, expected_path, engine)
     if checkpoint_missing:
         print(f"\n  {warn('⚠ 체크포인트 미충족 슬롯:')}")
         for step_id, slot_name in checkpoint_missing:
@@ -999,7 +1001,7 @@ def run_interactive(engine: FlowEngine, persona_id: str, scenario_id: str):
                 continue
             if engine.should_skip_check_item(cid, state):
                 continue
-            if cid in AUTO_COMPUTABLE_SLOTS:
+            if cid in engine._auto_compute:
                 continue
             missing.append(cid)
 
@@ -1088,6 +1090,7 @@ def main():
     parser.add_argument("--model", choices=["gpt-4o", "gpt-5"], default=None,
                         help="챗봇 응답 모델 (기본: .env의 OPENAI_CHAT_MODEL)")
     parser.add_argument("--verbose", "-v", action="store_true", help="상세 로그")
+    parser.add_argument("--config-dir", help="YAML config 디렉토리 (미지정 시 schema.py fallback)")
 
     args = parser.parse_args()
 
@@ -1120,11 +1123,19 @@ def main():
             slot_model = os.environ.get("SLOT_EXTRACTION_MODEL", "gpt-4o-mini")
         print(dim(f"  모델: 응답={chat_model}, 슬롯추출={slot_model}"))
 
+    # Config 로드 (--config-dir 지정 시)
+    config = None
+    if args.config_dir:
+        from config_loader import ConfigLoader
+        config = ConfigLoader(args.config_dir).load_all()
+        print(dim(f"  config: {args.config_dir}"))
+
     engine = FlowEngine(
         driver=driver,
         openai_client=openai_client,
         chat_model=chat_model,
         slot_extraction_model=slot_model,
+        config=config,
     )
 
     if args.interactive:

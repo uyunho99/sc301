@@ -60,6 +60,7 @@ SC301은 **Graph RAG 기반 성형외과(가슴성형) 상담 챗봇**으로, Ne
 ## 2. Main Workflow (턴 처리 파이프라인)
 
 사용자의 한 마디(턴) 입력부터 응답 생성까지의 전체 흐름. `FlowEngine.process_turn()` 메서드가 오케스트레이션한다.
+공통 파이프라인 로직은 `_check_early_return()`, `_advance_state()`, `_build_final_prompt()` 헬퍼로 추출되어 sync/streaming/async 3개 변형이 공유한다.
 
 ```
 User Input
@@ -446,10 +447,15 @@ sc301/
 | | `close` | `() -> None` | Neo4j 드라이버 종료 |
 | | `__enter__` / `__exit__` | — | Context manager 지원 |
 | **임베딩 캐시** | `_get_embedding_cache_key` | `(text: str) -> str` | 텍스트의 MD5 해시를 캐시 키로 생성 |
+| | `_get_cached_embedding` | `(text: str) -> tuple[str, list[float] \| None]` | 캐시 키 + 캐시된 임베딩 반환 (hit 시 LRU move_to_end) |
+| | `_store_embedding` | `(cache_key: str, embedding: list[float]) -> None` | 임베딩 캐시 저장 (LRU 최대 크기 초과 시 oldest 제거) |
 | | `clear_embedding_cache` | `() -> None` | 임베딩 캐시 초기화 |
 | **임베딩** | `embed` | `(text: str) -> list[float]` | 텍스트 → 벡터 (MD5 해시 LRU 캐시, 최대 1000개) |
 | | `embed_async` | `async (text: str) -> list[float]` | 비동기 임베딩 생성 (캐시 적용) |
-| **벡터 검색** | `vector_search` | `(question, k=5, search_type="surgery", min_score=0.5) -> list[Chunk]` | Neo4j 벡터 인덱스 검색 (min_score 필터링) |
+| **벡터 검색** | `_get_vector_query` | `@staticmethod (search_type: str) -> str` | search_type("surgery"/"step") → 해당 Cypher 쿼리 문자열 반환 |
+| | `_build_chunks_from_records` | `@staticmethod (records, min_score: float) -> list[Chunk]` | Neo4j 레코드 → Chunk 리스트 변환 (min_score 필터링) |
+| | `_merge_and_dedup_chunks` | `@staticmethod (surgery_chunks, step_chunks, limit) -> list[Chunk]` | 두 Chunk 리스트 합치기: 점수 정렬, 중복 제거, limit 적용 |
+| | `vector_search` | `(question, k=5, search_type="surgery", min_score=0.5) -> list[Chunk]` | Neo4j 벡터 인덱스 검색 (min_score 필터링) |
 | | `vector_search_combined` | `(question, k=2, min_score=0.5) -> list[Chunk]` | Surgery + Step 동시 검색, 점수 정렬, 중복 제거, 상위 k*2개 반환 |
 | | `vector_search_async` | `async (question, k, search_type, min_score) -> list[Chunk]` | 비동기 벡터 검색 (asyncio.to_thread 래핑) |
 | | `vector_search_combined_async` | `async (question, k, min_score) -> list[Chunk]` | Surgery + Step 비동기 병렬 검색 (asyncio.gather) |
@@ -468,7 +474,7 @@ sc301/
 ### 5.4. `flow.py` — 비즈니스 로직 레이어
 
 > 턴 처리, Persona 판별, Step 전이, 분기 평가, 슬롯 추출, 상담 스코어링, 프롬프트 생성
-> **시스템의 핵심 비즈니스 로직 담당 (~2260 lines)**
+> **시스템의 핵심 비즈니스 로직 담당 (~2180 lines)**
 
 #### 데이터 클래스
 
@@ -510,6 +516,10 @@ sc301/
 | 상수 | 값/타입 | 설명 |
 |------|---------|------|
 | `STALE_STEP_THRESHOLD` | `3` (모듈 레벨) | 동일 Step N턴 이상 체류 시 강제 진행 |
+| `RAG_SEARCH_K` | `2` (모듈 레벨) | RAG 벡터 검색 시 반환할 상위 k개 |
+| `RAG_SEARCH_MIN_SCORE` | `0.5` (모듈 레벨) | RAG 검색 최소 유사도 점수 |
+| `RAG_CONTEXT_MAX_LENGTH` | `1000` (모듈 레벨) | RAG context 최대 문자 길이 |
+| `HISTORY_WINDOW_SIZE` | `6` (모듈 레벨) | LLM 호출 시 포함할 최근 대화 턴 수 |
 | `PERSONA_AMBIGUITY_THRESHOLD` | `1` | 상위 2개 Persona 점수차가 이 값 이하면 disambiguation |
 | `PERSONA_KEYWORDS` | `dict[str, list[str]]` | 7개 Persona × 키워드 리스트. RED(최우선) 그룹 포함 |
 | `PERSONA_SIGNAL_RULES` | `dict[str, list[dict]]` | 5개 Persona × 복합 신호 보너스 규칙 ({signals, bonus}) |
@@ -621,14 +631,27 @@ sc301/
 | `_build_finalize_prompt` | `(step, state, rag) -> str` | finalize: 상담 마무리 요약 + 다음 단계 안내 |
 | `_build_default_prompt` | `(step, state, rag) -> str` | 기본 프롬프트 |
 
-##### K. 턴 처리 (Full Turn)
+##### K. 턴 파이프라인 헬퍼
+
+sync/streaming/async 3개 변형의 공통 로직을 추출한 헬퍼 메서드.
 
 | 메서드 | 시그니처 | 설명 |
 |--------|----------|------|
-| `process_turn` | `(state, user_text, core=None) -> tuple[str, ConversationState]` | 동기 턴 처리. slot추출 ∥ RAG검색 병렬 (ThreadPoolExecutor) |
-| `process_turn_streaming` | `(state, user_text, core=None) -> Generator` | 스트리밍 턴 처리. 청크 단위 yield → 마지막에 (response, state) yield |
-| `process_turn_async` | `async (state, user_text, core=None) -> tuple[str, ConversationState]` | 비동기 턴 처리. asyncio.to_thread + async OpenAI |
-| `_generate_response` | `(system_prompt, history) -> str` | LLM 동기 응답 생성 (max_completion_tokens 제한) |
+| `_check_early_return` | `(state) -> str \| None` | disambiguation 또는 no-step 상태에서 조기 반환 메시지. None이면 계속 진행 |
+| `_advance_state` | `(state, user_text) -> str` | slot 추출 후 상태 진행: auto_compute → scoring → stale check → transition → chain. inform_context 반환 |
+| `_build_final_prompt` | `(state, rag_context, inform_context) -> str \| None` | 현재 스텝의 system prompt 생성. step 없으면 None |
+| `_collect_rag_context` | `(chunks: list) -> str` | RAG 검색 결과를 RAG_CONTEXT_MAX_LENGTH 이내로 결합 |
+| `_do_rag_search_sync` | `(core, user_text: str) -> str` | 동기 RAG 검색 래퍼 (vector_search_combined + _collect_rag_context) |
+| `_build_llm_messages` | `(system_prompt: str, history: list[dict]) -> list[dict]` | system prompt + history → OpenAI messages 리스트 구성 |
+
+##### L. 턴 처리 (Full Turn)
+
+| 메서드 | 시그니처 | 설명 |
+|--------|----------|------|
+| `process_turn` | `(state, user_text, core=None) -> tuple[str, ConversationState]` | 동기 턴 처리. slot추출 ∥ RAG검색 병렬 (ThreadPoolExecutor). 파이프라인 헬퍼 사용 |
+| `process_turn_streaming` | `(state, user_text, core=None) -> Generator` | 스트리밍 턴 처리. 청크 단위 yield → 마지막에 (response, state) yield. 파이프라인 헬퍼 사용 |
+| `process_turn_async` | `async (state, user_text, core=None) -> tuple[str, ConversationState]` | 비동기 턴 처리. asyncio.to_thread + async OpenAI. 파이프라인 헬퍼 사용 |
+| `_generate_response` | `(system_prompt, history) -> str` | LLM 동기 응답 생성 (_build_llm_messages 사용) |
 | `_generate_response_streaming` | `(system_prompt, history) -> Generator[str]` | LLM 스트리밍 응답 생성 (delta.content yield) |
 | `_generate_response_async` | `async (system_prompt, history) -> str` | LLM 비동기 응답 생성 (AsyncOpenAI) |
 
@@ -645,6 +668,7 @@ sc301/
 | `get_core` | `(db_mode="aura") -> Core` | Core 인스턴스 팩토리 |
 | `get_flow_engine` | `(core, fast_mode=False, model_override=None, consultation_scoring_mode="hybrid") -> FlowEngine` | FlowEngine 인스턴스 팩토리. MODEL_PRESETS 기반 모델 선택 |
 | `get_state_storage` | `() -> StateStorage` | StateStorage 인스턴스 팩토리 (환경변수 기반) |
+| `_load_or_create_state` | `(storage, session_id: str) -> ConversationState` | 세션 상태 로드 또는 신규 생성 헬퍼 |
 
 #### 상수
 

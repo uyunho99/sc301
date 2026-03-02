@@ -1,0 +1,153 @@
+version: "1.0"
+
+# =============================================================================
+# 의료 지식 그래프 (Surgery, SideEffect, Program + 관계)
+# =============================================================================
+
+# --- 수술 유형 ---
+surgeries:
+  Surgery_BreastAugmentation:
+    name: "가슴 확대술"
+    category: "가슴성형"
+    description: >-
+      실리콘 보형물 또는 지방이식을 통한 가슴 확대 시술입니다.
+      자연스러운 볼륨감과 형태를 만들어주며, 개인의 체형과 희망에 맞춤 설계됩니다.
+    side_effects: [SE_Swelling, SE_Bruising, SE_CapsularContracture]
+
+  Surgery_BreastReduction:
+    name: "가슴 축소술"
+    category: "가슴성형"
+    description: >-
+      과도하게 큰 가슴으로 인한 불편함을 해소하기 위한 시술입니다.
+      어깨 통증, 자세 문제 등을 개선할 수 있습니다.
+    side_effects: [SE_Swelling, SE_Scarring]
+
+  Surgery_FatTransfer:
+    name: "가슴 지방이식"
+    category: "가슴성형"
+    description: >-
+      본인의 복부나 허벅지 지방을 채취하여 가슴에 이식하는 자연스러운 시술입니다.
+      보형물 없이 자연스러운 볼륨업이 가능합니다.
+    side_effects: [SE_Swelling, SE_FatAbsorption]
+
+  Surgery_Rhinoplasty:
+    name: "코 성형술"
+    category: "안면성형"
+    description: >-
+      코의 형태와 높이를 개선하는 시술입니다.
+      실리콘, 자가연골 등 다양한 재료를 사용하며 자연스러운 라인을 만들어줍니다.
+    side_effects: [SE_Swelling, SE_Bruising]
+
+  Surgery_Blepharoplasty:
+    name: "눈 성형술"
+    category: "안면성형"
+    description: >-
+      쌍꺼풀 수술, 눈매교정, 앞트임 등을 포함한 눈 성형 시술입니다.
+      더 또렷하고 생기있는 눈매를 만들어줍니다.
+    side_effects: [SE_Swelling, SE_Bruising]
+
+  Surgery_FaceContour:
+    name: "안면윤곽술"
+    category: "안면성형"
+    description: "광대, 턱, 이마 등 얼굴 뼈를 다듬어 균형잡힌 얼굴형을 만드는 시술입니다."
+    side_effects: [SE_Swelling, SE_Numbness]
+
+# --- 부작용 (레거시 Surgery용) ---
+surgery_side_effects:
+  SE_Swelling:
+    name: "붓기"
+    description: "시술 후 일시적인 붓기가 발생할 수 있으며, 보통 1-2주 내에 자연스럽게 가라앉습니다."
+  SE_Bruising:
+    name: "멍"
+    description: "시술 부위에 멍이 생길 수 있으며, 일반적으로 1-2주 후 사라집니다."
+  SE_CapsularContracture:
+    name: "구형구축"
+    description: "보형물 주변에 피막이 두꺼워져 가슴이 딱딱해지는 현상입니다. 발생률이 낮으며 재수술로 해결 가능합니다."
+  SE_Scarring:
+    name: "흉터"
+    description: "절개 부위에 흉터가 남을 수 있으나, 시간이 지나면서 옅어지고 의류로 가려지는 위치에 최소화합니다."
+  SE_FatAbsorption:
+    name: "지방 흡수"
+    description: "이식된 지방 중 일부가 체내에 흡수될 수 있습니다. 보통 30-50%가 생착되며, 필요시 추가 시술이 가능합니다."
+  SE_Numbness:
+    name: "감각 저하"
+    description: "시술 부위의 일시적인 감각 저하가 있을 수 있으나, 대부분 수개월 내 회복됩니다."
+
+# --- 프로그램 ---
+programs:
+  lowFatCustromProgram:
+    name: "체지방량 부족 고객 맞춤 지방흡입/지방이식 프로그램"
+    category: "지방 성형"
+    description: >-
+      체지방 기준 검증을 전제로 체중 증량, 영양 관리, 사전 검진을 포함해
+      시술 가능 여부를 단계적으로 확정하거나 필요 시 대안 시술 루트를 제공하는 맞춤형 프로그램
+    side_effects: [swelling, bruising, pain, mobilityDiscomfort, recoverySpeedVar]
+
+  lipoStandalone:
+    name: "지방흡입(단독)"
+    category: "체형/지방흡입"
+    description: "불필요 지방 제거로 라인 개선. 회복 및 압박복/관리 안내가 중요."
+    side_effects: [swelling, bruising, pain, contourIrregularity]
+
+  lipoGraftCombined:
+    name: "지방흡입 + 지방이식(결합)"
+    category: "체형+볼륨"
+    description: "흡입으로 라인 개선 후, 필요한 부위에 볼륨을 보완."
+    side_effects: [suctionRecoveryVar, graftSurvialVar]
+
+  stemCellGraft:
+    name: "줄기세포 지방이식(결합 옵션)"
+    category: "볼륨/줄기세포"
+    description: "지방 채취 → 농축/처리 → 주입. 생착률·유지력 기대를 중심으로 설명."
+    side_effects: [swelling, pain, graftSurvialVar]
+
+  faceAntiAgingProgram:
+    name: "얼굴・피부 맞춤 안티에이징 프로그램"
+    category: "피부・안면 시술"
+    description: >-
+      보톡스, 필러, 줄기세포 지방이식 등을 피부 상태, 기대 지속성을 기준으로 조합하여
+      안전성과 회복을 고려해 설계되는 맞춤형 안티에이징 프로그램
+    side_effects: [swelling, bruising, tempPain, effectDurationVar]
+
+  longDistanceProgram:
+    name: "원거리 거주자 맞춤 지방흡입/지방이식 프로그램"
+    category: "지방 성형"
+    description: >-
+      원격 사전 준비(사진/서류/인바디 대체)와 일정 압축 설계를 통해 국내 고객과 동등한 생착률을 목표로
+      운영되는 맞춤형 프로그램. 거주 권역/해외 여부에 따라 사후관리 루트를 다르게 제공.
+    side_effects: [swelling, bruising, pain, mobilityDiscomfort, recoverySpeedVar]
+
+  revisionGraftProgram:
+    name: "재수술 고객 맞춤 지방이식 프로그램"
+    category: "가슴 성형"
+    description: >-
+      재수술 고객의 수술 이력과 현재 상태를 기반으로 제거-이식-사후관리를 통합 설계하며,
+      조건을 충족하는 경우 재수술에서도 1차 수술과 유사한 생착률과 결과를 목표로 운영되는 맞춤형 프로그램
+    side_effects: [swelling, bruising, pain, recoverySpeedVar, scarring, sensoryChange]
+
+# --- 부작용 (프로그램용) ---
+program_side_effects:
+  swelling:
+    name: "붓기"
+  bruising:
+    name: "멍"
+  pain:
+    name: "통증"
+  contourIrregularity:
+    name: "울퉁불퉁함"
+  suctionRecoveryVar:
+    name: "흡입 부위 회복 편차"
+  graftSurvialVar:
+    name: "이식 생착률 편차"
+  mobilityDiscomfort:
+    name: "이동 시 불편감"
+  recoverySpeedVar:
+    name: "회복 속도 개인차"
+  tempPain:
+    name: "일시적 통증"
+  effectDurationVar:
+    name: "효과 지속 개인차"
+  scarring:
+    name: "흉터"
+  sensoryChange:
+    name: "감각 변화"

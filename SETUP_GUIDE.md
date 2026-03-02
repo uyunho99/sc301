@@ -230,9 +230,11 @@ python cli.py turn my-session "가슴 확대 비용이 궁금해요" --db local 
 
 ### Turn 내부 플로우 (process_turn)
 
+sync/streaming/async 3개 변형이 공통 헬퍼(`_check_early_return`, `_advance_state`, `_build_final_prompt`)를 공유한다.
+
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ 1. State 로드                                                │
+│ 1. State 로드 (_load_or_create_state)                        │
 │    - file/redis에서 session_id로 조회                        │
 └──────────────────────────┬───────────────────────────────────┘
                            │
@@ -241,66 +243,42 @@ python cli.py turn my-session "가슴 확대 비용이 궁금해요" --db local 
 │ 2. Persona/Scenario 결정 (첫 턴만)                           │
 │    - 키워드 매칭 → LLM 추론으로 페르소나 결정                │
 │    - 시나리오의 시작 Step 설정                                │
+│    → _check_early_return: disambiguation이면 조기 반환       │
 └──────────────────────────┬───────────────────────────────────┘
                            │
                            ▼
 ┌──────────────────────────────────────────────────────────────┐
-│ 3. Slot Extraction (정보 추출)                               │
+│ 3. Slot Extraction ∥ RAG Search (병렬 실행)                  │
 │    - 현재 Step + 시나리오 전체 미수집 CheckItem 통합 (Prefetch) │
 │    - LLM 1회 호출로 사용자 발화에서 값 추출                  │
-│    - state.slots에 저장                                      │
+│    - _do_rag_search_sync: vector_search_combined → context   │
+│    ※ async 변형은 RAG를 아래 단계 이후에 실행                │
 └──────────────────────────┬───────────────────────────────────┘
                            │
                            ▼
 ┌──────────────────────────────────────────────────────────────┐
-│ 3.5 Auto-compute Slots                                       │
-│    - bmi: bodyInfo에서 자동 계산                              │
-│    - regionBucket: residenceCountry/domesticDistrict에서 도출 │
+│ 4. _advance_state (상태 진행 파이프라인)                      │
+│    - 3.5 Auto-compute: bmi, regionBucket 등 파생 슬롯 자동계산│
+│    - 3.6 Persona 스코어링: 누적 6.0 이상 시 톤 확정          │
+│    - 3.7 Stale Step: 동일 스텝 3턴 이상 시 미수집 → '미응답' │
+│    - 4.0 Step Transition: BRANCHING → TO → leadsTo 체인      │
+│    - 4.5 Chain Through Empty: inform 스텝 자동 건너뛰기      │
+│    → inform_context (건너뛴 안내 내용) 반환                   │
 └──────────────────────────┬───────────────────────────────────┘
                            │
                            ▼
 ┌──────────────────────────────────────────────────────────────┐
-│ 3.6 Stale Step 감지 (STALE_STEP_THRESHOLD = 3)              │
-│    - 동일 스텝 3턴 이상 체류 시 미수집 항목 → '미응답' 처리  │
-│    - confirm/finalize 스텝은 제외                             │
-└──────────────────────────┬───────────────────────────────────┘
-                           │
-                           ▼
-┌──────────────────────────────────────────────────────────────┐
-│ 3.7 상담 Persona 스코어링 (hybrid 모드)                      │
-│    - 규칙 기반 키워드 매칭 + LLM 추론 (4차원 점수)           │
-│    - 누적 점수 6.0 이상 시 Persona 확정                      │
-│    - 확정 후 톤/전략 프롬프트에 반영                          │
-└──────────────────────────┬───────────────────────────────────┘
-                           │
-                           ▼
-┌──────────────────────────────────────────────────────────────┐
-│ 4. Step Transition (다음 단계 결정)                          │
-│    - BRANCHING_RULES → RULE_CONDITION_MAP → TO 체인          │
-│    - 조건 충족시 다음 Step으로 이동                           │
-└──────────────────────────┬───────────────────────────────────┘
-                           │
-                           ▼
-┌──────────────────────────────────────────────────────────────┐
-│ 4.5 Chain Through Empty Steps                                │
-│    - inform 스텝(CheckItem 없음) 자동 건너뛰기               │
-│    - 건너뛴 inform의 Guide/Program 안내 내용 수집            │
-└──────────────────────────┬───────────────────────────────────┘
-                           │
-                           ▼
-┌──────────────────────────────────────────────────────────────┐
-│ 5. Vector Search (RAG)                                       │
-│    - Neo4j Vector Index에서 Surgery/SideEffect 검색          │
-│    - 관련 정보를 context로 수집                              │
+│ 5. _build_final_prompt (프롬프트 생성)                        │
+│    - Step 유형별 시스템 프롬프트 (build_step_prompt)          │
+│    - inform 안내 내용 + RAG context 통합                      │
 └──────────────────────────┬───────────────────────────────────┘
                            │
                            ▼
 ┌──────────────────────────────────────────────────────────────┐
 │ 6. Response Generation                                       │
-│    - Step 유형별 프롬프트 생성 (collect/inform/confirm/...)   │
-│    - 건너뛴 inform 안내 내용 + RAG context + history 포함    │
+│    - _build_llm_messages: system_prompt + history(최근 6턴)  │
+│    - LLM으로 최종 응답 생성 (sync/streaming/async 분기)      │
 │    - 상담 Persona 톤/전략 반영                               │
-│    - LLM으로 최종 응답 생성 (스트리밍 지원)                  │
 └──────────────────────────┬───────────────────────────────────┘
                            │
                            ▼

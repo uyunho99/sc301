@@ -202,32 +202,35 @@ class Core:
         """임베딩 캐시 초기화"""
         self._embedding_cache.clear()
 
+    def _get_cached_embedding(self, text: str) -> tuple[str, list[float] | None]:
+        """캐시에서 임베딩 조회. (cache_key, embedding_or_None) 반환."""
+        cache_key = self._get_embedding_cache_key(text)
+        if cache_key in self._embedding_cache:
+            self._embedding_cache.move_to_end(cache_key)
+            return cache_key, self._embedding_cache[cache_key]
+        return cache_key, None
+
+    def _store_embedding(self, cache_key: str, embedding: list[float]) -> None:
+        """임베딩을 캐시에 저장 (LRU 관리 포함)."""
+        if len(self._embedding_cache) >= self._embedding_cache_max_size:
+            self._embedding_cache.popitem(last=False)
+        self._embedding_cache[cache_key] = embedding
+
     # =========================================================================
     # Embedding (전략 2: 캐싱 적용)
     # =========================================================================
 
     def embed(self, text: str) -> list[float]:
         """텍스트를 벡터로 변환 (캐싱 적용)"""
-        cache_key = self._get_embedding_cache_key(text)
-
-        # 캐시 확인
-        if cache_key in self._embedding_cache:
-            # LRU: 최근 사용으로 이동
-            self._embedding_cache.move_to_end(cache_key)
-            return self._embedding_cache[cache_key]
-
-        # API 호출
+        cache_key, cached = self._get_cached_embedding(text)
+        if cached is not None:
+            return cached
         response = self.openai.embeddings.create(
             model=self.config.openai_embedding_model,
             input=text
         )
         embedding = response.data[0].embedding
-
-        # 캐시에 저장 (최대 크기 초과 시 가장 오래된 항목 제거)
-        if len(self._embedding_cache) >= self._embedding_cache_max_size:
-            self._embedding_cache.popitem(last=False)
-        self._embedding_cache[cache_key] = embedding
-
+        self._store_embedding(cache_key, embedding)
         return embedding
 
     # =========================================================================
@@ -236,30 +239,69 @@ class Core:
 
     async def embed_async(self, text: str) -> list[float]:
         """비동기 임베딩 생성 (캐싱 적용)"""
-        cache_key = self._get_embedding_cache_key(text)
-
-        # 캐시 확인
-        if cache_key in self._embedding_cache:
-            self._embedding_cache.move_to_end(cache_key)
-            return self._embedding_cache[cache_key]
-
-        # 비동기 API 호출
+        cache_key, cached = self._get_cached_embedding(text)
+        if cached is not None:
+            return cached
         response = await self.async_openai.embeddings.create(
             model=self.config.openai_embedding_model,
             input=text
         )
         embedding = response.data[0].embedding
-
-        # 캐시에 저장
-        if len(self._embedding_cache) >= self._embedding_cache_max_size:
-            self._embedding_cache.popitem(last=False)
-        self._embedding_cache[cache_key] = embedding
-
+        self._store_embedding(cache_key, embedding)
         return embedding
 
     # =========================================================================
     # Vector Search (전략 7: min_score 필터링)
     # =========================================================================
+
+    @staticmethod
+    def _get_vector_query(search_type: str) -> str:
+        """search_type에 맞는 Cypher 쿼리 반환."""
+        if search_type == "surgery":
+            return QUERY_VECTOR_SEARCH_SURGERY
+        elif search_type == "step":
+            return QUERY_VECTOR_SEARCH_STEP
+        raise ValueError(f"지원하지 않는 search_type: {search_type}")
+
+    @staticmethod
+    def _build_chunks_from_records(records, min_score: float) -> list[Chunk]:
+        """Neo4j 결과에서 Chunk 목록 생성 (min_score 필터링)."""
+        chunks = []
+        for record in records:
+            score = record["score"]
+            if score < min_score:
+                continue
+            content = f"{record.get('name', '')}: {record.get('desc', '')}"
+            chunks.append(Chunk(
+                id=record["id"],
+                content=content.strip(),
+                metadata={
+                    "name": record.get("name"),
+                    "category": record.get("category"),
+                    "stepType": record.get("stepType"),
+                },
+                score=score
+            ))
+        return chunks
+
+    @staticmethod
+    def _merge_and_dedup_chunks(
+        surgery_chunks: list[Chunk],
+        step_chunks: list[Chunk],
+        limit: int
+    ) -> list[Chunk]:
+        """두 검색 결과를 점수 기준으로 합치고, 중복 제거 후 상위 limit개 반환."""
+        all_chunks = surgery_chunks + step_chunks
+        all_chunks.sort(key=lambda x: x.score, reverse=True)
+        seen_ids = set()
+        unique_chunks = []
+        for chunk in all_chunks:
+            if chunk.id not in seen_ids:
+                seen_ids.add(chunk.id)
+                unique_chunks.append(chunk)
+                if len(unique_chunks) >= limit:
+                    break
+        return unique_chunks
 
     def vector_search(
         self,
@@ -271,36 +313,11 @@ class Core:
         """Neo4j Vector Index에서 유사 청크 검색 (min_score 필터링)"""
         if not self.driver:
             raise RuntimeError("Neo4j 드라이버가 초기화되지 않음")
-
         embedding = self.embed(question)
-
-        if search_type == "surgery":
-            query = QUERY_VECTOR_SEARCH_SURGERY
-        elif search_type == "step":
-            query = QUERY_VECTOR_SEARCH_STEP
-        else:
-            raise ValueError(f"지원하지 않는 search_type: {search_type}")
-
+        query = self._get_vector_query(search_type)
         with self.driver.session() as session:
             result = session.run(query, embedding=embedding, k=k)
-            chunks = []
-            for record in result:
-                score = record["score"]
-                # min_score 미만 결과 제외 (전략 7)
-                if score < min_score:
-                    continue
-                content = f"{record.get('name', '')}: {record.get('desc', '')}"
-                chunks.append(Chunk(
-                    id=record["id"],
-                    content=content.strip(),
-                    metadata={
-                        "name": record.get("name"),
-                        "category": record.get("category"),
-                        "stepType": record.get("stepType"),
-                    },
-                    score=score
-                ))
-            return chunks
+            return self._build_chunks_from_records(result, min_score)
 
     def vector_search_combined(
         self,
@@ -315,22 +332,7 @@ class Core:
         step_chunks = self.vector_search(
             question, k=k, search_type="step", min_score=min_score
         )
-
-        # 점수 기준으로 합치고 정렬
-        all_chunks = surgery_chunks + step_chunks
-        all_chunks.sort(key=lambda x: x.score, reverse=True)
-
-        # 중복 제거 후 상위 k*2개만 반환
-        seen_ids = set()
-        unique_chunks = []
-        for chunk in all_chunks:
-            if chunk.id not in seen_ids:
-                seen_ids.add(chunk.id)
-                unique_chunks.append(chunk)
-                if len(unique_chunks) >= k * 2:
-                    break
-
-        return unique_chunks
+        return self._merge_and_dedup_chunks(surgery_chunks, step_chunks, k * 2)
 
     # =========================================================================
     # 비동기 Vector Search (전략 4)
@@ -346,37 +348,13 @@ class Core:
         """비동기 벡터 검색"""
         if not self.driver:
             raise RuntimeError("Neo4j 드라이버가 초기화되지 않음")
-
         embedding = await self.embed_async(question)
+        query = self._get_vector_query(search_type)
 
-        if search_type == "surgery":
-            query = QUERY_VECTOR_SEARCH_SURGERY
-        elif search_type == "step":
-            query = QUERY_VECTOR_SEARCH_STEP
-        else:
-            raise ValueError(f"지원하지 않는 search_type: {search_type}")
-
-        # Neo4j 쿼리를 비동기로 래핑
         def run_query():
             with self.driver.session() as session:
                 result = session.run(query, embedding=embedding, k=k)
-                chunks = []
-                for record in result:
-                    score = record["score"]
-                    if score < min_score:
-                        continue
-                    content = f"{record.get('name', '')}: {record.get('desc', '')}"
-                    chunks.append(Chunk(
-                        id=record["id"],
-                        content=content.strip(),
-                        metadata={
-                            "name": record.get("name"),
-                            "category": record.get("category"),
-                            "stepType": record.get("stepType"),
-                        },
-                        score=score
-                    ))
-                return chunks
+                return self._build_chunks_from_records(result, min_score)
 
         return await asyncio.to_thread(run_query)
 
@@ -393,24 +371,8 @@ class Core:
         step_task = self.vector_search_async(
             question, k=k, search_type="step", min_score=min_score
         )
-
         surgery_chunks, step_chunks = await asyncio.gather(surgery_task, step_task)
-
-        # 점수 기준으로 합치고 정렬
-        all_chunks = surgery_chunks + step_chunks
-        all_chunks.sort(key=lambda x: x.score, reverse=True)
-
-        # 중복 제거 후 상위 k*2개만 반환
-        seen_ids = set()
-        unique_chunks = []
-        for chunk in all_chunks:
-            if chunk.id not in seen_ids:
-                seen_ids.add(chunk.id)
-                unique_chunks.append(chunk)
-                if len(unique_chunks) >= k * 2:
-                    break
-
-        return unique_chunks
+        return self._merge_and_dedup_chunks(surgery_chunks, step_chunks, k * 2)
 
     # =========================================================================
     # Schema Management

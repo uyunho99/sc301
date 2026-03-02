@@ -18,7 +18,7 @@ from typing import Optional, Dict, List
 from neo4j import GraphDatabase
 from flow import FlowEngine
 from state import ConversationState
-from schema import BRANCHING_RULES
+# schema.py 상수는 engine 인스턴스 속성으로 접근 (Phase 1B-2)
 
 # ===========================================================================
 # 설정
@@ -105,8 +105,7 @@ def walk_scenario(
             for ci in checks:
                 vn = ci.get("variableName") or ci.get("name") or ci.get("id")
                 if vn and not state.is_slot_filled(vn) and not engine.should_skip_check_item(vn, state):
-                    from schema import AUTO_COMPUTABLE_SLOTS
-                    if vn not in AUTO_COMPUTABLE_SLOTS:
+                    if vn not in engine._auto_compute:
                         missing.append(vn)
             assert False, (
                 f"Step '{current}'에서 머무름 (stay). "

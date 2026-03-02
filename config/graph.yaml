@@ -1,0 +1,1735 @@
+version: "1.0"
+
+hospital:
+  name: "서울가슴성형외과"
+  domain: "breast_surgery"
+
+defaults:
+  system_slots: [protocolMode]
+
+# =============================================================================
+# 페르소나
+# =============================================================================
+personas:
+  slimBody:
+    name: "슬림 바디 고민러"
+    description: >-
+      체지방률이 낮아 지방흡입 및 지방이식 시 채취 가능량이 제한될 수 있는 고객,
+      시술 가능 여부와 기대 결과에 대한 불확실성이 높아 사전 검진을 통한 기준 충족 여부 확인과
+      체중 증량 또는 대안 루트 제시를 포함한 단계적 상담을 선호함.
+    tags: [마른 체형, 채취 량 제한, 시술 적합성 검증, 체중 증량 고려, 사전 검진 중요, 대안 시술]
+    scenarios: [scenLowFat]
+
+  lipoCustomer:
+    name: "지방 흡입 및 흡입 후 지방 이식 희망 고객"
+    description: >-
+      지방흡입 후 이식(특히 줄기세포 지방이식)에 관심이 있으며,
+      효과 발현 시점·부작용 위험·비용 대비 만족도를 핵심 기준으로 판단함.
+      일반 지방이식 vs 줄기세포 지방이식 등 시술 방식 간 차이를 명확히 비교해줄 때 신뢰가 생기며,
+      정보 탐색을 충분히 하되 빠른 예약으로 직접 상담을 받기를 원함.
+    tags: [20대 여성, 지방흡입, 줄기세포 관심, 정보탐색, 부작용 우려, 빠른 의사결정, 회복기간 중시, 비용 대비 만족 중시]
+    scenarios: [scenLipoGraft]
+
+  skinTreatment:
+    name: "피부 시술 고민러"
+    description: >-
+      얼굴 및 피부 부위의 노화 개선을 목적으로 시술을 고려하는 고객.
+      단기 효과보다 자연스러움, 지속성, 안전성을 중시하며, 과거 시술 경험이 있는 경우도 많아 기존 시술과의 관계에 민감함.
+      복잡한 의학 설명보다는 쉽고 직관적인 비교 설명을 선호함.
+    tags: [얼굴 시술, 피부 노화, 안티에이징, 지속성 중시, 안전 및 회복 중시]
+    scenarios: [scenAntiAging]
+
+  longDistance:
+    name: "원거리 거주자"
+    description: >-
+      해외 또는 국내 원거리 거주로 병원 방문이 제한적이며, 상담–검사–시술–사후관리까지
+      일정 효율 최적화를 최우선으로 고려함.
+      체류 기간을 빠르게 확정하고, 원격 환자 프로토콜(Remote Patient Protocol)을 통해
+      국내 고객과 동등한 생착률을 보장받는 맞춤 프로그램을 원함.
+    tags: [해외유학생, 지방거주, 일정중심, 체류기간 제한, 방문횟수 최소화, 원격상담, 사후관리 중요]
+    scenarios: [scenRemote]
+
+  revisionFatigue:
+    name: "재수술에 지친 마음"
+    description: >-
+      과거 성형 수술 이후 이물감, 비대칭, 자연스러움 부족 등의 경험으로 재수술을 고민하고 있으나,
+      반복된 시술로 심리적 피로와 불안이 큼.
+      자연스러운 체형 및 촉감을 선호하며, 석회화・괴사・흉터와 같은 리스크에 매우 민감함.
+      가능하다면 한 번에 끝나는 안정적인 원스텝 플랜을 선호함.
+    tags: [재수술, 보형물 제거, 안전 중시, 흉터 민감, 심리적 피로, 원스텝 선호]
+    scenarios: [scenRevision]
+
+  # --- 레거시 페르소나 ---
+  P1_BreastConsult:
+    name: "가슴성형 상담 고객"
+    description: "가슴 확대, 축소, 지방이식 등 가슴 성형에 관심있는 고객"
+    tags: [가슴, 확대, 축소, 지방이식]
+    scenarios: [SC_BreastConsult]
+
+  P2_FaceConsult:
+    name: "안면성형 상담 고객"
+    description: "코, 눈, 윤곽 등 안면 성형에 관심있는 고객"
+    tags: [코, 눈, 윤곽, 안면]
+    scenarios: [SC_FaceConsult]
+
+# =============================================================================
+# 시나리오
+# =============================================================================
+scenarios:
+  scenLowFat:
+    name: "체지방량 부족 고객 맞춤 지방 성형 적합성 검증 상담"
+    description: >-
+      체지방률이 낮은 고객을 조기에 식별하고, 기초 정보-라이프스타일-세부 조건 검증을 통해
+      시술 가능 기준 또는 대안 루트를 명확히 안내하는 상담 시나리오
+    domain: "지방흡입 / 지방이식 / 체형·볼륨 개선"
+    stage_model: "collect → ask → inform → confirm → schedule → finalize"
+    steps: [p1CollectInfo, p1AskLifestyle, p1AskDetail, p1InformSurgery, p1InformInfo, p1Confirm]
+
+  scenLipoGraft:
+    name: "지방흡입-이식 옵션 비교 기반 상담(빠른 의사결정형)"
+    description: >-
+      고객이 지방흡입만 진행할지, 흡입 후 이식까지 결합할지의 의사결정을 돕기 위해
+      효과·안정성·회복·비용을 비교 설명하고 일정/검사/예약으로 연결하는 상담 시나리오
+    domain: "체형(지방흡입) / 볼륨(지방이식)"
+    stage_model: "collect → ask → inform → confirm → schedule → finalize"
+    steps: [p2PreCollect, p2Collect, p2AskLifestyle, p2AskDetail, p2InformSurgery, p2InformInfoA, p2InformInfoB, p2Finalize]
+
+  scenAntiAging:
+    name: "얼굴 및 피부 시술 고민 고객 맞춤 안티에이징 상담"
+    description: >-
+      얼굴・피부 시술을 고민하는 고객의 상태와 기대 효과를 단계적으로 확인하고,
+      지속성과 안전성을 기준으로 시술 옵션을 비교・안내하는 상담 시나리오
+    domain: "줄기세포 지방이식 / 안티에이징"
+    stage_model: "collect → ask → inform → confirm → schedule → finalize"
+    steps: [p3Collect, p3AskLifestyle, p3AskDetail, p3AskSurgery, p3InformSugery, p3Confirm]
+
+  scenRemote:
+    name: "원거리 거주자(해외/국내권역) 맞춤 Remote Patient 기반 지방성형 상담"
+    description: >-
+      원거리 고객을 조기 식별하고(해외/국내권역), 원격 준비(업로드)–일정 압축–지역별 사후관리 루트까지
+      포함한 맞춤형 상담 응답을 제공하는 시나리오
+    domain: "지방흡입 / 지방이식 / 체형·볼륨 개선"
+    stage_model: "collect → ask → inform → confirm → schedule → finalize"
+    steps: [p4PreCollect, p4Collect, p4AskLifestyle, p4AskDetail, p4InformSurgery, p4InformInfo, p4Confirm, p4Finalize]
+
+  scenRevision:
+    name: "재수술 고객 맞춤 안전성 중심 지방이식 상담"
+    description: >-
+      재수술 경험으로 불안과 심리적 피로가 높은 대상으로 과거 시술 이력과 현재 상태를 확인하여
+      결과의 안정성을 인식시키는 상담 시나리오
+    domain: "줄기세포 지방이식 / 재수술"
+    stage_model: "collect → ask → inform → confirm → schedule → finalize"
+    steps: [p5Collect, p5AskLifestyle, p5AskDetail, p5AskMedical, p5InformSurgery, p5InformInfo, p5Confirm]
+
+  # --- 레거시 시나리오 ---
+  SC_BreastConsult:
+    name: "가슴성형 상담 시나리오"
+    description: "가슴 성형 관련 상담 진행을 위한 플로우"
+    domain: "성형외과"
+    stage_model: "collect-inform-schedule"
+    steps: []
+
+  SC_FaceConsult:
+    name: "안면성형 상담 시나리오"
+    description: "안면 성형 관련 상담 진행을 위한 플로우"
+    domain: "성형외과"
+    stage_model: "collect-inform-schedule"
+    steps: []
+
+# =============================================================================
+# Step 정의
+# =============================================================================
+steps:
+  # --- Persona 1: 슬림바디 (scenLowFat) ---
+  p1CollectInfo:
+    description: "고객의 기본 신체 조건을 확인하고 체지방량 리스크를 1차 식별"
+    type: collect
+    checks: [bodyInfo, bodyFat, bodyType, inbodyAvailable]
+    guides: []
+    programs: []
+    reference_slots: []
+
+  p1AskLifestyle:
+    description: "일상 습관과 체중, 체지방 증량 가능성을 확인"
+    type: ask
+    checks: [activityPattern, exerciseLevel, dietPattern, weightGainIntent]
+    guides: []
+    programs: []
+    reference_slots: []
+
+  p1AskDetail:
+    description: "현재 상태와 시술 적합성을 최종 검토"
+    type: ask
+    checks: [fatSourceAvailability, pastOps, pastOpsSite]
+    guides: []
+    programs: []
+    reference_slots: []
+
+  p1InformSurgery:
+    description: "체지방 기준에 따른 시술 가능 여부와 방식 안내"
+    type: inform
+    checks: []
+    guides: [guideGraftInfoStandard, guideGraftInfoLowFat]
+    programs: [lowFatCustromProgram]
+    reference_slots: [protocolMode]
+
+  p1InformInfo:
+    description: "체중 증량, 영양 관리, 회복 관리 방식 안내"
+    type: inform
+    checks: [weightGainPlan, nutritionConsult, recoveryGuideline]
+    guides: [guideGraftTimelineStandard, guideGraftTimelineLowFatIntent]
+    programs: []
+    reference_slots: []
+
+  p1Confirm:
+    description: "사전 검진 관련 사항 안내 후 예약 진행"
+    type: confirm
+    checks: [customerName, phoneNumber, surgeryWindow, recheckSchedule]
+    guides: [guideBookingDiscount, guideGraftScheduleLowFat]
+    programs: []
+    reference_slots: []
+
+  # --- Persona 2: 지방흡입 (scenLipoGraft) ---
+  p2PreCollect:
+    description: "기본 조건/일정/생활 패턴 수집으로 초기 적합성 및 일정 가능성 판단"
+    type: collect
+    checks: [basicInfo, bodyInfo, schedule, concernArea, medicalHistory]
+    guides: []
+    programs: []
+    reference_slots: []
+
+  p2Collect:
+    description: "시술 가능성 판단을 위한 신체 조건 및 수술 희망 시기/일정 제약 확인"
+    type: collect
+    checks: [bodyInfo, schedule, travelConstraint]
+    guides: []
+    programs: []
+    reference_slots: []
+
+  p2AskLifestyle:
+    description: "운동/업무/활동 패턴을 기반으로 회복 가능 기간과 관리 난이도 확인"
+    type: ask
+    checks: [activityPattern, exerciseLevel, smoking, recoveryAllowance, jobIntensity]
+    guides: []
+    programs: []
+    reference_slots: []
+
+  p2AskDetail:
+    description: "흡입 부위, 원하는 변화, 과거 시술 경험 기반으로 흡입 적합성 및 범위 확인"
+    type: ask
+    checks: [fatSourceAvailability, lipoArea, lipoGoal, riskFactor, pastOps]
+    guides: []
+    programs: []
+    reference_slots: []
+
+  p2InformSurgery:
+    description: "지방흡입 단독 vs 결합 옵션 비교 및 수용 여부 확인"
+    type: inform
+    checks: [planPreference, upsellAccept, concernSideEffect, costSensitivity, recoveryAllowance]
+    guides: [guideCompareLipoOnly, guideCompareLipoPlusTransfer]
+    programs: []
+    reference_slots: [protocolMode]
+
+  p2InformInfoA:
+    description: "흡입 단독 시 수술 플랜 안내"
+    type: inform
+    checks: [recoveryTimeline, lipoPlanDetail, costRange]
+    guides: [guideRecommendLipoOnly]
+    programs: [lipoStandalone]
+    reference_slots: []
+
+  p2InformInfoB:
+    description: "흡입+이식 결합 플랜 및 줄기세포 차이 안내"
+    type: inform
+    checks: [transferType, transferPlanDetail, recoveryTimeline, graftExpectation, costRange]
+    guides: [guideRecommendLipoPlusGeneral]
+    programs: [lipoGraftCombined]
+    reference_slots: []
+
+  p2Finalize:
+    description: "필수 검사 안내 및 방문 일정 확정"
+    type: finalize
+    checks: [precheckRequired, visitSchedule, sameDayPossible, reservationIntent]
+    guides: [guideTriggerLipoOnly, guideTriggerLipoPlusTransfer]
+    programs: []
+    reference_slots: []
+
+  # --- Persona 3: 피부시술 (scenAntiAging) ---
+  p3Collect:
+    description: "고객의 기본 신체 조건과 피부 상태를 확인"
+    type: collect
+    checks: [bodyInfo, bodyFat, skinType, skinCondition]
+    guides: []
+    programs: []
+    reference_slots: []
+
+  p3AskLifestyle:
+    description: "일상 습관과 피부 회복・유지에 영향을 주는 요인 확인"
+    type: ask
+    checks: [activityPattern, sunExposure, skincareRoutine, smoking]
+    guides: []
+    programs: []
+    reference_slots: []
+
+  p3AskDetail:
+    description: "현재 상태와 시술 적합성을 최종 검토"
+    type: ask
+    checks: [fatSourceAvailability, fillerRemaining, allergyHistory, pastOps, pastOpsSite, botoxCycle]
+    guides: []
+    programs: []
+    reference_slots: []
+
+  p3AskSurgery:
+    description: "고객의 관심 부위와 기대 효과를 명확히 파악"
+    type: ask
+    checks: [concernArea, desiredEffect, durabilityExpectation]
+    guides: []
+    programs: []
+    reference_slots: []
+
+  p3InformSugery:
+    description: "시술별 특징, 지속 기간, 비용, 절차, 안전성 정보를 비교 안내"
+    type: Step
+    checks: []
+    guides: []
+    programs: [faceAntiAgingProgram]
+    reference_slots: []
+
+  p3Confirm:
+    description: "시술 확정 전 필요한 검진과 방문 가능 일정을 안내하고 예약 진행"
+    type: confirm
+    checks: [customerName, phoneNumber, surgeryWindow, visitSchedule, procedurePlan]
+    guides: []
+    programs: []
+    reference_slots: []
+
+  # --- Persona 4: 원거리 (scenRemote) ---
+  p4PreCollect:
+    description: "해외/국내 권역 산정 및 프로토콜 분기 설정"
+    type: collect
+    checks: [residenceCountry, domesticDistrict, regionBucket, visitPeriod, travelConstraint]
+    guides: [guideStandardPremise, guideSemiremotePremise, guideAbroadPremise]
+    programs: []
+    reference_slots: []
+
+  p4Collect:
+    description: "시술 적합성 판단을 위한 기본 신체 조건 수집(원격 증빙 포함)"
+    type: collect
+    checks: [bodyInfo, bodyFat, inbodyAvailable, inbodyPhotoUpload]
+    guides: [guideStandardInbody, guideSemiremoteInbody, guideAbroadInbody]
+    programs: []
+    reference_slots: []
+
+  p4AskLifestyle:
+    description: "생활습관·회복 기간 확인 및 원격 맞춤 응답 적용"
+    type: ask
+    checks: [activityPattern, exerciseLevel, smoking, recoveryAllowance]
+    guides: [guideStandardRecovery, guideSemiremoteLogic, guideAbroadLogic]
+    programs: []
+    reference_slots: []
+
+  p4AskDetail:
+    description: "과거 이력 및 일정 압축 가능성 확인"
+    type: ask
+    checks: [fatSourceAvailability, pastOps, pastOpsSite]
+    guides: [guideSemiremoteProcess, guideAbroadProcess]
+    programs: []
+    reference_slots: []
+
+  p4InformSurgery:
+    description: "시술 절차 및 일정 압축 루트 안내"
+    type: inform
+    checks: []
+    guides: [guideStandardProcess, guideSemiremoteRoute, guideAbroadProtocol]
+    programs: [longDistanceProgram]
+    reference_slots: [protocolMode]
+
+  p4InformInfo:
+    description: "사전 준비(사진/서류) 및 원격 체크리스트 제공"
+    type: inform
+    checks: [precheckTimeEstimate, bodyPhotoUpload, documentUpload]
+    guides: [guideStandardUpload, guideSemiremoteUpload, guideAbroadUpload]
+    programs: []
+    reference_slots: []
+
+  p4Confirm:
+    description: "수술 윈도우 확정 및 우선 예약 안내"
+    type: confirm
+    checks: [surgeryWindow, depositReservation]
+    guides: [guideStandardBooking, guideSemiremoteBooking, guideAbroadBooking]
+    programs: []
+    reference_slots: []
+
+  p4Finalize:
+    description: "권역별 사후관리 일정 제시 및 예약 확정"
+    type: finalize
+    checks: [customerName, phoneNumber, aftercarePlan, followupSchedule]
+    guides: [guideStandardPostCare, guideSemiremotePostCare, guideAbroadPostCare]
+    programs: []
+    reference_slots: []
+
+  # --- Persona 5: 재수술 (scenRevision) ---
+  p5Collect:
+    description: "고객의 기본 신체 조건 확인"
+    type: collect
+    checks: [bodyInfo, bodyFat, bodyType]
+    guides: []
+    programs: []
+    reference_slots: []
+
+  p5AskLifestyle:
+    description: "일상 활동 패턴과 회복 가능성 확인"
+    type: ask
+    checks: [activityPattern, smoking, workConstraint, recoveryAllowance]
+    guides: []
+    programs: []
+    reference_slots: []
+
+  p5AskDetail:
+    description: "재수술 여부와 의료 이력을 포함한 시술 조건 확인"
+    type: ask
+    checks: [fatSourceAvailability, breastCancerHistory, implantPresence, cancerSurgeryType, pastOps, pastOpsSite]
+    guides: []
+    programs: []
+    reference_slots: []
+
+  p5AskMedical:
+    description: "보형물 상태, 재수술 사유, 이전 수술 이력 등 추가 정보 확인"
+    type: ask
+    checks: [implantCondition, implantOriginHospital]
+    guides: []
+    programs: []
+    reference_slots: []
+
+  p5InformSurgery:
+    description: "수술 옵션 설명 및 1차 수술 결과와의 유사성 강조"
+    type: inform
+    checks: []
+    guides: [guideCancerNone, guideRevisionEffect, guideCancerPartial, guideCancerTotal, guideImplantNone, guideImplantInhouse, guideImplantExternal]
+    programs: [revisionGraftProgram]
+    reference_slots: [protocolMode]
+
+  p5InformInfo:
+    description: "재수술 결과의 안정성 및 사후 관리 프로세스 설명"
+    type: inform
+    checks: [aftercarePlan, scarManagement, riskExplanationLevel]
+    guides: [guideImplantTimeline]
+    programs: []
+    reference_slots: []
+
+  p5Confirm:
+    description: "조건 충족 고객에 한해 필수 검진과 방문 일정 확정"
+    type: confirm
+    checks: [customerName, phoneNumber, surgeryWindow, visitSchedule, procedurePlan]
+    guides: [guideBookingEvent]
+    programs: []
+    reference_slots: []
+
+# =============================================================================
+# Step 순서 (Step→Step :TO 체인)
+# =============================================================================
+step_order:
+  # scenLowFat
+  p1CollectInfo: p1AskLifestyle
+  p1AskLifestyle: p1AskDetail
+  p1AskDetail: p1InformSurgery
+  p1InformSurgery: p1InformInfo
+  p1InformInfo: p1Confirm
+
+  # scenLipoGraft
+  p2PreCollect: p2Collect
+  p2Collect: p2AskLifestyle
+  p2AskLifestyle: p2AskDetail
+  p2AskDetail: p2InformSurgery
+  p2InformSurgery: [p2InformInfoA, p2InformInfoB]  # 분기 (branching rules가 결정)
+  p2InformInfoA: p2Finalize
+  p2InformInfoB: p2Finalize
+
+  # scenAntiAging
+  p3Collect: p3AskLifestyle
+  p3AskLifestyle: p3AskDetail
+  p3AskDetail: p3AskSurgery
+  p3AskSurgery: p3InformSugery
+  p3InformSugery: p3Confirm
+
+  # scenRemote
+  p4PreCollect: p4Collect
+  p4Collect: p4AskLifestyle
+  p4AskLifestyle: p4AskDetail
+  p4AskDetail: p4InformSurgery
+  p4InformSurgery: p4InformInfo
+  p4InformInfo: p4Confirm
+  p4Confirm: p4Finalize
+
+  # scenRevision
+  p5Collect: p5AskLifestyle
+  p5AskLifestyle: p5AskDetail
+  p5AskDetail: p5AskMedical
+  p5AskMedical: p5InformSurgery
+  p5InformSurgery: p5InformInfo
+  p5InformInfo: p5Confirm
+
+# =============================================================================
+# CheckItem 정의 (별도 섹션)
+# =============================================================================
+check_items:
+  # === 공통 신체정보 ===
+  bodyInfo:
+    name: "키·체중·나이"
+    dataType: float
+    hint: "키(cm)와 체중(kg)을 함께 기재. 예: '170cm 65kg'"
+  bodyFat:
+    name: "체지방률"
+    dataType: float
+    hint: "체지방률(%). 예: '25%'"
+  bodyType:
+    name: "체형"
+    dataType: string
+    hint: "체형 분류: 마른편 / 보통 / 비만형"
+  inbodyAvailable:
+    name: "인바디 가능 여부"
+    dataType: boolean
+    hint: "인바디 검사 결과 보유 여부. true 또는 false"
+  inbodyPhotoUpload:
+    name: "인바디 사진 업로드"
+    dataType: image
+    hint: "인바디 결과 사진 업로드 여부. true 또는 false"
+
+  # === 공통 시술 이력 ===
+  fatSourceAvailability:
+    name: "지방 채취 가능 부위"
+    dataType: string
+    hint: "지방 채취 가능 부위 및 지방량. 예: '복부 충분', '허벅지 소량'"
+  pastOps:
+    name: "과거 시술 이력"
+    dataType: string
+    hint: "과거 수술/시술 이력. 예: '가슴 확대 1회', '가슴 보형물 삽입 1회', '없음'"
+  pastOpsSite:
+    name: "과거 수술 부위 (채취 가능성 영향)"
+    dataType: string
+    hint: "과거 수술 부위. 예: '가슴', '가슴 좌측', '가슴 양측'"
+  smoking:
+    name: "흡연 여부"
+    dataType: boolean
+    hint: "흡연 여부. true 또는 false"
+
+  # === P1 슬림바디 ===
+  activityPattern:
+    name: "활동 패턴"
+    dataType: string
+    hint: "일상 활동 패턴. 예: '사무직', '활동적', '운동 자주'"
+  exerciseLevel:
+    name: "운동 강도"
+    dataType: string
+    hint: "운동 빈도/강도. 예: '주 3회', '거의 안 함'"
+  dietPattern:
+    name: "식습관"
+    dataType: string
+    hint: "식습관/식이 패턴. 예: '저탄고지', '불규칙'"
+  weightGainIntent:
+    name: "체중 증량 의사"
+    dataType: boolean
+    hint: "체중 증량 의사. true 또는 false"
+  weightGainPlan:
+    name: "체중 증량 계획"
+    dataType: string
+    hint: "체중 증량 구체 계획"
+  nutritionConsult:
+    name: "영양 상담"
+    dataType: string
+    hint: "영양 상담 희망 여부. true 또는 false"
+  concernArea:
+    name: "관심 부위"
+    dataType: string
+    hint: "관심/고민 부위. 예: '가슴', '가슴 볼륨', '가슴 탄력'"
+  surgeryWindow:
+    name: "시술 가능 기간"
+    dataType: string
+    hint: "희망 시술 시기. 예: '다음 달', '3개월 내'"
+  recheckSchedule:
+    name: "재측정 일정"
+    dataType: datetime
+    hint: "재진 일정. 예: '2주 후'"
+  recoveryGuideline:
+    name: "회복 관리 가이드"
+    dataType: string
+    hint: "회복 가이드라인/주의사항. 예: '2주간 압박복 착용', '음주 금지'"
+
+  # === P2 지방흡입 ===
+  basicInfo:
+    name: "성함, 연락처"
+    dataType: string
+    hint: "고객 이름과 연락처. 예: '김지현 010-1234-5678'"
+  schedule:
+    name: "수술 계획 시기"
+    dataType: datetime
+    hint: "방문 가능 일정"
+  medicalHistory:
+    name: "질환·복용약·정기검진"
+    dataType: string
+    hint: "과거 병력/수술 이력"
+  upsellAccept:
+    name: "비교·권유(흡입+이식 옵션 안내) 수용 여부(예/아니오)"
+    dataType: boolean
+    hint: "지방이식 추가 시술 동의. true 또는 false"
+    options: [optTrue, optFalse]
+  transferType:
+    name: "일반 지방이식 vs 줄기세포 지방이식"
+    dataType: string
+    hint: "이식 유형 선택: 일반 또는 줄기세포"
+  transferPlanDetail:
+    name: "동시 vs 단계 (진행 플랜, 일정/회복 타임라인 산정에 사용)"
+    dataType: enum
+    hint: "이식 세부 계획. 예: '줄기세포 이식 + 가슴 볼륨 보충', '일반 이식 + 가슴 볼륨업'"
+    options: [simultaneous, staged, undecided]
+  recoveryAllowance:
+    name: "회복 가능 기간"
+    dataType: string
+    hint: "회복 가능 기간. 예: '1주일', '2주'"
+  travelConstraint:
+    name: "이동 제약(비행/장거리 이동)"
+    dataType: string
+    hint: "이동/방문 제약사항"
+  precheckRequired:
+    name: "사전 검사 필요 여부"
+    dataType: boolean
+    hint: "사전검사 필요 여부. true 또는 false"
+  visitSchedule:
+    name: "방문 일정(검사/수술)"
+    dataType: datetime
+    hint: "방문 예약 일정"
+  sameDayPossible:
+    name: "당일 상담/검진 가능 여부"
+    dataType: boolean
+    hint: "당일 시술 가능 여부. true 또는 false"
+  reservationIntent:
+    name: "예약 의향"
+    dataType: boolean
+    hint: "예약 의사. true 또는 false"
+  depositReservation:
+    name: "우선 예약(보증금) 신청 여부"
+    dataType: boolean
+    hint: "예약금 결제 의사. true 또는 false"
+  jobIntensity:
+    name: "직무 강도(업무 복귀 난이도)"
+    dataType: string
+    hint: "직업 강도/활동 수준. 예: '사무직(낮음)', '현장직(높음)', '서비스직(보통)'"
+  lipoArea:
+    name: "흡입 희망 부위"
+    dataType: string
+    hint: "지방흡입 희망 부위 (가슴 이식용 채취). 예: '복부', '허벅지', '옆구리'"
+  lipoGoal:
+    name: "원하는 변화(라인/체형)"
+    dataType: string
+    hint: "지방흡입 목표/기대 결과. 예: '가슴 볼륨업', '가슴 지방이식용 채취'"
+  lipoPlanDetail:
+    name: "흡입 단독 플랜 상세(범위/관리 포함)"
+    dataType: string
+    hint: "흡입 세부 계획. 예: '복부+허벅지 동시 흡입 후 가슴 이식'"
+  riskFactor:
+    name: "멍·염증·통증 민감도 등"
+    dataType: string
+    hint: "위험 요소/우려사항. 예: '고혈압', '당뇨', '없음'"
+  planPreference:
+    name: "\"흡입만 우선\" vs \"흡입+이식도 고려\""
+    dataType: string
+    hint: "시술 계획 선호. 예: '한 번에 진행', '단계별 진행'"
+  concernSideEffect:
+    name: "부작용 우려 포인트"
+    dataType: string
+    hint: "우려하는 부작용. 예: '울퉁불퉁', '비대칭', '감각 이상'"
+  costSensitivity:
+    name: "비용 대비 만족도 기준(예산 감도)"
+    dataType: string
+    hint: "비용 민감도. 예: '예산 중요', '결과 우선', '적절한 선에서'"
+  recoveryTimeline:
+    name: "일상 복귀 희망 시점"
+    dataType: string
+    hint: "회복 일정/기간. 예: '1주 후 출근', '2주 재택'"
+  costRange:
+    name: "예상 비용 범위(구간/구성 포함)"
+    dataType: string
+    hint: "예산 범위. 예: '300만원 이내', '500만원 이내', '제한 없음'"
+  graftExpectation:
+    name: "기대 볼륨 및 유지 기간"
+    dataType: string
+    hint: "이식 기대 효과. 예: '자연스러운 가슴 볼륨', '가슴 탄력 개선'"
+
+  # === P3 피부시술 ===
+  skinType:
+    name: "피부 타입"
+    dataType: string
+    hint: "피부 타입. 예: '건성', '지성', '복합성', '민감성'"
+  skinCondition:
+    name: "주름・탄력・색감 상태"
+    dataType: string
+    hint: "현재 피부 상태. 예: '가슴 부위 탄력 저하', '수술 후 흉터', '색소침착'"
+  allergyHistory:
+    name: "알러지 여부"
+    dataType: string
+    hint: "알레르기 이력"
+  botoxCycle:
+    name: "보톡스 주기"
+    dataType: string
+    hint: "보톡스 시술 주기. 예: '6개월마다', '처음'"
+  fillerRemaining:
+    name: "잔여 필러 여부"
+    dataType: boolean
+    hint: "기존 필러 잔여량/상태. 예: '거의 흡수됨', '일부 남아있음', '없음'"
+  procedurePlan:
+    name: "최종 시술 계획"
+    dataType: string
+    hint: "시술 계획/선호 시술. 예: '가슴성형 전후 피부관리', '수술 후 피부 탄력 관리'"
+  sunExposure:
+    name: "자외선 노출 빈도"
+    dataType: string
+    hint: "자외선 노출 정도. 예: '야외 활동 많음', '실내 위주', '자외선 차단 꾸준히'"
+  skincareRoutine:
+    name: "피부 관리 습관"
+    dataType: string
+    hint: "스킨케어 루틴. 예: '기초만', '풀코스', '거의 안 함'"
+  desiredEffect:
+    name: "기대 효과"
+    dataType: string
+    hint: "희망 효과. 예: '가슴 피부 탄력', '수술 후 피부 회복', '흉터 최소화'"
+  durabilityExpectation:
+    name: "지속성 기대 수준"
+    dataType: string
+    hint: "효과 지속 기간 기대. 예: '6개월 이상', '1년', '반영구'"
+
+  # === P4 원거리 ===
+  residenceCountry:
+    name: "해외(ABROAD)·국내(KR)"
+    dataType: string
+    hint: "거주국. 예: '한국', '미국', '일본' 또는 '해외'"
+  domesticDistrict:
+    name: "국내 행정구(시/군/구)"
+    dataType: string
+    hint: "국내 거주 지역. 예: '서울', '부산', '경기'"
+  regionBucket:
+    name: "국내 권역 분류(S1~S6)"
+    dataType: string
+    hint: "지역 분류 코드 (자동 계산). S1(서울)~S6(강원/제주)"
+    options: [regionS1, regionS2, regionS3, regionS4, regionS5, regionS6]
+  visitPeriod:
+    name: "한국 체류 기간"
+    dataType: string
+    hint: "한국 방문/체류 기간"
+  aftercarePlan:
+    name: "사후관리 방식(내원/원격 혼합)"
+    dataType: string
+    hint: "시술 후 관리 계획"
+  followupSchedule:
+    name: "권역별 사후관리 일정표"
+    dataType: string
+    hint: "사후 관리 일정"
+  precheckTimeEstimate:
+    name: "검진 소요 시간"
+    dataType: string
+    hint: "사전검사 소요 시간 예상. 예: '30분', '1시간'"
+  bodyPhotoUpload:
+    name: "신체 사진 업로드"
+    dataType: image
+    hint: "체형 사진 업로드 여부. true 또는 false"
+  documentUpload:
+    name: "서류 업로드(해외/원거리 사전 확인용)"
+    dataType: file
+    hint: "서류(의료기록 등) 업로드 여부. true 또는 false"
+
+  # === P5 재수술 ===
+  breastCancerHistory:
+    name: "유방암 이력 여부"
+    dataType: boolean
+    hint: "유방암 병력. true 또는 false"
+  cancerSurgeryType:
+    name: "유방암 수술 방식 (부분 절제; 완전 절제)"
+    dataType: string
+    hint: "암 수술 유형: 부분절제 또는 전절제"
+  implantPresence:
+    name: "보형물 존재 여부"
+    dataType: boolean
+    hint: "보형물 삽입 여부. true 또는 false"
+  implantCondition:
+    name: "보형물 상태(온전; 손상; 구축)"
+    dataType: string
+    hint: "보형물 상태. 예: '양호', '파손', '구축'"
+  implantOriginHospital:
+    name: "기존 보형물 수술 병원"
+    dataType: string
+    hint: "보형물 시술 병원명"
+  workConstraint:
+    name: "업무・생활 제약"
+    dataType: string
+    hint: "직업 제약사항. 예: '2주 후 출근 필수', '재택 가능', '육체 노동'"
+  scarManagement:
+    name: "흉터 관리 방식"
+    dataType: string
+    hint: "흉터 관리 방법. 예: '실리콘 시트', '레이저', '자연 치유'"
+  riskExplanationLevel:
+    name: "리스크 설명 필요 수준"
+    dataType: string
+    hint: "위험성 설명 수준. 예: '상세히', '핵심만', '서면으로'"
+
+  # === 개인정보 (공통 마무리 단계) ===
+  customerName:
+    name: "고객 성함"
+    dataType: string
+    hint: "고객 성함"
+  phoneNumber:
+    name: "연락처"
+    dataType: string
+    hint: "연락처 (휴대폰 번호). 예: '010-1234-5678'"
+
+  # === 시스템 관리 ===
+  protocolMode:
+    name: "채팅 중 설정되는 모드"
+    dataType: string
+    hint: "시술 프로토콜 모드 (분기 규칙에 의해 자동 설정)"
+
+  # === 레거시 CheckItem ===
+  CI_Name:
+    name: "고객 이름"
+    dataType: string
+    hint: "성함"
+  CI_Age:
+    name: "고객 나이"
+    dataType: string
+    hint: "나이"
+  CI_Concern:
+    name: "상담 고민"
+    dataType: string
+    hint: "고민/희망사항"
+  CI_Budget:
+    name: "예산 범위"
+    dataType: string
+    hint: "예산"
+  CI_PreferredDate:
+    name: "희망 상담 일자"
+    dataType: string
+    hint: "희망일"
+
+# =============================================================================
+# Guide 정의
+# =============================================================================
+guides:
+  # --- P1 슬림바디 ---
+  guideGraftInfoStandard:
+    description: "Standard → 지방 이식 관련 수술 정보 안내"
+  guideGraftInfoLowFat:
+    description: "Low-Fat → 지방 이식 관련 수술 정보 안내 + 체지방 증가 의사 확인"
+  guideGraftTimelineStandard:
+    description: "Standard → 지방 이식 관련 타임라인 안내"
+  guideGraftTimelineLowFatIntent:
+    description: >-
+      Low-Fat → 지방 이식 관련 타임라인 안내 +
+      [증량 의사 존재 시: 시술 전 프로그램 수행 후 수술 진행]
+      [증량 의사 부재 시: 체지방 증가 시에만 수술 가능함을 설득]
+  guideBookingDiscount:
+    description: "Standard → 상담 중 예약 시 기본 검진비 할인 이벤트 안내"
+  guideGraftScheduleLowFat:
+    description: "Low-Fat → 체지방 증가 프로그램 사용에 따른 일정 추가 가능성 안내 필요"
+
+  # --- P2 지방흡입 ---
+  guideCompareLipoOnly:
+    description: "Lipoonly → 비교는 짧게 요약하고 '흡입만 진행' 결정에 확신 부여 (불필요한 upsell 최소화)"
+  guideRecommendLipoOnly:
+    description: "Lipoonly → RECOMMENDS: Surgery A + 흡입 범위/관리/압박복/회복 timeline 중심"
+  guideTriggerLipoOnly:
+    description: "Lipoonly → '빠른 의사결정' 니즈 반영해 예약 트리거 간결하게"
+  guideCompareLipoPlusTransfer:
+    description: "Lipoplustransfer → 비교를 상세화 (일반 vs 줄기세포 차이 포함) + 고객 우려(부작용/비용/효과 발현) 기준으로 Q&A 확장"
+  guideRecommendLipoPlusGeneral:
+    description: >-
+      Lipoplustransfer → RECOMMENDS: Surgery B 기본 +
+      transfer_type=stemcell이면 RECOMMENDS: Surgery C 병렬 제시 (생착/유지/비용/회복 비교)
+  guideTriggerLipoPlusTransfer:
+    description: "Lipoplustransfer → 비교 후 의사결정이 남아있을 수 있어 결정 도움 → 예약 트리거 순서(옵션 재확인 1회)"
+
+  # --- P4 원거리: Standard ---
+  guideStandardPremise:
+    description: "Standard → 국내·근거리로 기본 내원 전제"
+  guideStandardInbody:
+    description: "Standard → InBody 있으면 권장, 없으면 선택"
+  guideStandardRecovery:
+    description: "Standard → 일반 회복 안내(내원 중심)"
+  guideStandardProcess:
+    description: "Standard → 일반 프로세스/내원 루트 중심"
+  guideStandardUpload:
+    description: "Standard → 업로드는 선택/보조"
+  guideStandardBooking:
+    description: "Standard → 예약 가이드 표준"
+  guideStandardPostCare:
+    description: "Standard → 내원 사후관리 중심"
+
+  # --- P4 원거리: Semiremote ---
+  guideSemiremotePremise:
+    description: "Semiremote → 국내·원거리로 이동 최소화 전제"
+  guideSemiremoteInbody:
+    description: "Semiremote → InBody 없으면 대체(사진/측정치) 권장"
+  guideSemiremoteLogic:
+    description: "Semiremote → '이동/체류 제약' 반영해 원격/혼합 확정"
+  guideSemiremoteProcess:
+    description: "Semiremote → 일정 압축 영향 요소(이동/내원 횟수) 추가 질문"
+  guideSemiremoteRoute:
+    description: "Semiremote → '일정 압축 루트(검사-상담-시술 묶기)' 강조"
+  guideSemiremoteUpload:
+    description: "Semiremote → 업로드 권장, 검진 동선 최적화 안내"
+  guideSemiremoteBooking:
+    description: "Semiremote → 체류/이동 고려해 '최소 방문 횟수' 기준으로 윈도우 제안"
+  guideSemiremotePostCare:
+    description: "Semiremote → 내원+원격 혼합(지역별 루트 제공)"
+
+  # --- P4 원거리: Abroad ---
+  guideAbroadPremise:
+    description: "Abroad → 해외로 원격 우선 전제"
+  guideAbroadInbody:
+    description: "Abroad → InBody 어려우면 반드시 대체 업로드 유도"
+  guideAbroadLogic:
+    description: "Abroad → 원격 운영 가능성 체크 강화(비행/시차/연락수단) 후 확정"
+  guideAbroadProcess:
+    description: "Abroad → 일정 압축 + 원격 검사/서류 가능 여부 추가 질문"
+  guideAbroadProtocol:
+    description: "Abroad → '동등 생착률 + 원격 프로토콜(업로드/원격 체크)' 강하게 강조"
+  guideAbroadUpload:
+    description: "Abroad → 업로드 필수(사진/서류), 원격 체크리스트 상세 제공"
+  guideAbroadBooking:
+    description: "Abroad → 항공일정/체류일 기준으로 가장 촘촘한 윈도우 설계 + 우선예약 강유도"
+  guideAbroadPostCare:
+    description: "Abroad → 원격 사후관리 중심 + 필요한 최소 내원만 제시(온라인 체크인/모니터링)"
+
+  # --- P5 재수술 ---
+  guideCancerNone:
+    description: "Standard → 유방암 시술 이력 존재하지 않으므로 이후 단계 진행"
+  guideRevisionEffect:
+    description: "Standard → 재수술의 경우에도 첫 수술과 유사한 효과를 낼 수 있음을 강조"
+  guideCancerPartial:
+    description: "Conditional → 유방암 시술 이력 + 부분 절제 경우 시술 가능함을 강조"
+  guideCancerTotal:
+    description: "Not_allowed → 유방암 시술 이력 + 완전 절제 경우 시술 불가능함을 안내 후 상담 종료"
+  guideImplantNone:
+    description: "None → 보형물 시술 이력 존재하지 않으므로 이후 단계 진행"
+  guideImplantInhouse:
+    description: "In_house_removal → 보형물 시술 이력 + 보형물 상태 온전하므로 시술 진행 시 제거 + 지방 이식을 함께 진행함을 안내"
+  guideImplantExternal:
+    description: "External_house_removal → 보형물 시술 이력 + 보형물 상태 온전하지 않으므로 시술 시 기존 병원에서 보형물 제거 시에만 이후 수술이 가능함을 안내"
+  guideImplantTimeline:
+    description: "External_house_removal → 보형물 제거 추가된 타임라인 안내"
+  guideBookingEvent:
+    description: "Standard | Conditional | None | In_house_removal | External_house_removal → 상담 중 예약 시 기본 검진비 할인 이벤트 안내"
+
+# =============================================================================
+# Option 정의
+# =============================================================================
+options:
+  optTrue:
+    value: "true"
+    description: "예"
+  optFalse:
+    value: "false"
+    description: "아니오"
+  simultaneous:
+    value: "simultaneous"
+    description: "흡입+이식 동시 진행"
+  staged:
+    value: "staged"
+    description: "흡입+이식 단계 진행"
+  undecided:
+    value: "undecided"
+    description: "미정"
+  regionS1:
+    value: "S1"
+    description: "서울권(도심 1시간 내)"
+  regionS2:
+    value: "S2"
+    description: "수도권(경기/인천)"
+  regionS3:
+    value: "S3"
+    description: "충청/강원권"
+  regionS4:
+    value: "S4"
+    description: "영남권"
+  regionS5:
+    value: "S5"
+    description: "호남권"
+  regionS6:
+    value: "S6"
+    description: "제주권"
+
+# =============================================================================
+# 분기 규칙 (BRANCHING_RULES 전사)
+# =============================================================================
+branching:
+  # P1: BMI 기준 분기 (p1InformSurgery에서)
+  p1InformSurgery:
+    - transition_id: bmiPathStandard
+      rule_id: ruleBodyFatHigh
+      target_step: p1InformInfo
+      priority: 10
+      protocol_mode: STANDARD
+    - transition_id: bmiPathLowFat
+      rule_id: ruleBodyFatLow
+      target_step: p1InformInfo
+      priority: 20
+      protocol_mode: LOW-FAT
+    - transition_id: bmiPathDefault
+      target_step: p1InformInfo
+      priority: 0
+      default: true
+      protocol_mode: STANDARD
+
+  # P2: 흡입 단독 vs 흡입+이식 분기 (인라인 조건)
+  p2InformSurgery:
+    - transition_id: lipoOnly
+      target_step: p2InformInfoA
+      priority: 20
+      conditions:
+        - var: upsellAccept
+          op: "="
+          ref: "false"
+    - transition_id: lipoPlusTransfer
+      target_step: p2InformInfoB
+      priority: 10
+      conditions:
+        - var: upsellAccept
+          op: "="
+          ref: "true"
+    - transition_id: lipoDefault
+      target_step: p2InformInfoA
+      priority: 0
+      default: true
+
+  # P2: 일반 vs 줄기세포 분기 (p2InformInfoB 이후, 인라인 조건)
+  p2InformInfoB:
+    - transition_id: chooseGeneral
+      target_step: p2Finalize
+      priority: 10
+      conditions:
+        - var: transferType
+          op: "="
+          ref: "일반"
+    - transition_id: chooseStemCell
+      target_step: p2Finalize
+      priority: 20
+      conditions:
+        - var: transferType
+          op: "="
+          ref: "줄기세포"
+    - transition_id: chooseDefaultUndecided
+      target_step: p2Finalize
+      priority: 0
+      default: true
+
+  # P4: 거주지 기반 프로토콜 분기
+  p4PreCollect:
+    - transition_id: regionPathAbroad
+      rule_id: ruleRegionRemote
+      target_step: p4Collect
+      priority: 20
+      protocol_mode: FULL
+    - transition_id: regionPathSemiRemote
+      rule_id: ruleRegionSemiRemote
+      target_step: p4Collect
+      priority: 10
+      protocol_mode: SEMI-REMOTE
+    - transition_id: regionPathStandard
+      target_step: p4Collect
+      priority: 0
+      default: true
+      protocol_mode: STANDARD
+
+  # P5: 유방암 + 보형물 분기
+  p5AskMedical:
+    - transition_id: transCancerCheck
+      rule_id: ruleCancerNone
+      target_step: p5InformSurgery
+      priority: 30
+      protocol_mode: STANDARD
+    - transition_id: transCancerCheck
+      rule_id: ruleCancerConditional
+      target_step: p5InformSurgery
+      priority: 20
+      protocol_mode: CONDITIONAL
+    - transition_id: transCancerCheck
+      rule_id: ruleCancerNotAllowed
+      target_step: p5InformSurgery
+      priority: 10
+      protocol_mode: NOT_ALLOWED
+    - transition_id: transCancerDefault
+      target_step: p5InformSurgery
+      priority: 0
+      default: true
+      protocol_mode: STANDARD
+
+# =============================================================================
+# Rule → Condition 매핑 (레거시 DB 호환)
+# =============================================================================
+rule_condition_map:
+  ruleBodyFatHigh: [condBmiStandard]
+  ruleBodyFatLow: [condBmiLowFat]
+  ruleStandardGuide: [condProtoclStandard]
+  ruleLowFatGuideA: [condProtoclLowFat, condWeightGainIntent]
+  ruleLowFatGuideB: [condProtoclLowFat, condWeightGainIntentNone]
+  ruleRegionSemiRemote: [condRegionSemiRemoteA, condRegionSemiRemoteB]
+  ruleRegionRemote: [condRegionRemote]
+  ruleInbodyPhotoUpload: [condInbodyAvailable]
+  ruleCancerNone: [condBreastCancerNone]
+  ruleCancerConditional: [condBreastCancerHistory, condCancerSurgeryTypePartial]
+  ruleCancerNotAllowed: [condBreastCancerHistory, condCancerSurgeryTypeTotal]
+  ruleImplantNone: [condImplantNone]
+  ruleImplantIntact: [condImplantPresence, condImplantConditionIntact]
+  ruleImplantDamaged: [condImplantPresence, condImplantConditionDamaged]
+
+# OR 로직을 사용하는 DecisionRule (기본값은 AND)
+or_logic_rules: [ruleRegionStandard]
+
+# =============================================================================
+# Condition 정의 (Neo4j Condition 노드 생성용)
+# =============================================================================
+conditions:
+  condBmiStandard:
+    input: bmi
+    op: ">="
+    ref: 23
+    refType: number
+    missingPolicy: UNKNOWN
+    description: "체지방 23이상인지 검사"
+  condBmiLowFat:
+    input: bmi
+    op: "<"
+    ref: 23
+    refType: number
+    missingPolicy: UNKNOWN
+    description: "체지방 23미만인지 검사"
+  condWeightGainIntent:
+    input: weightGainIntent
+    op: "="
+    ref: true
+    refType: boolean
+    missingPolicy: UNKNOWN
+    description: "체중 증량 계획 있는지 판단"
+  condWeightGainIntentNone:
+    input: weightGainIntent
+    op: "!="
+    ref: true
+    refType: boolean
+    missingPolicy: UNKNOWN
+    description: "체중 증량 계획 없는지 판단"
+  condProtoclStandard:
+    input: protocolMode
+    op: "="
+    ref: "STANDARD"
+    refType: string
+    missingPolicy: UNKNOWN
+    description: "프로토콜 모드가 STANDARD인지 판단"
+  condProtoclLowFat:
+    input: protocolMode
+    op: "="
+    ref: "LOW-FAT"
+    refType: string
+    missingPolicy: UNKNOWN
+    description: "프로토콜 모드가 LOW-FAT인지 판단"
+  condRegionSeoul:
+    input: regionBucket
+    op: "="
+    ref: "S1"
+    refType: string
+    missingPolicy: UNKNOWN
+    description: "국내 거주자 중 서울 지역 거주인지 판단"
+  condRegionGyeonggi:
+    input: regionBucket
+    op: "="
+    ref: "S2"
+    refType: string
+    missingPolicy: UNKNOWN
+    description: "국내 거주자 중 경기 지역 거주인지 판단"
+  condRegionSemiRemoteA:
+    input: regionBucket
+    op: "!="
+    ref: "S1"
+    refType: string
+    missingPolicy: UNKNOWN
+    description: "국내 거주자 중 서울 외 거주인지 판단"
+  condRegionSemiRemoteB:
+    input: regionBucket
+    op: "!="
+    ref: "S2"
+    refType: string
+    missingPolicy: UNKNOWN
+    description: "국내 거주자 중 경기 외 거주인지 판단"
+  condRegionRemote:
+    input: residenceCountry
+    op: "="
+    ref: "ABROAD"
+    refType: string
+    missingPolicy: UNKNOWN
+    description: "해외 거주자인지 판단"
+  condInbodyAvailable:
+    input: inbodyAvailable
+    op: "="
+    ref: true
+    refType: boolean
+    missingPolicy: UNKNOWN
+    description: "인바디 가능 여부 확인"
+  condBreastCancerNone:
+    input: breastCancerHistory
+    op: "="
+    ref: false
+    refType: boolean
+    missingPolicy: UNKNOWN
+    description: "유방암 이력 없음을 판단"
+  condBreastCancerHistory:
+    input: breastCancerHistory
+    op: "="
+    ref: true
+    refType: boolean
+    missingPolicy: UNKNOWN
+    description: "유방암 이력 있음을 판단"
+  condCancerSurgeryTypePartial:
+    input: cancerSurgeryType
+    op: "="
+    ref: "부분"
+    refType: string
+    missingPolicy: UNKNOWN
+    description: "유방암 수술 타입 확인 (부분 절제)"
+  condCancerSurgeryTypeTotal:
+    input: cancerSurgeryType
+    op: "="
+    ref: "완전"
+    refType: string
+    missingPolicy: UNKNOWN
+    description: "유방암 수술 타입 확인 (완전 절제)"
+  condImplantNone:
+    input: implantPresence
+    op: "="
+    ref: false
+    refType: boolean
+    missingPolicy: UNKNOWN
+    description: "보형물 없음을 판단"
+  condImplantPresence:
+    input: implantPresence
+    op: "="
+    ref: true
+    refType: boolean
+    missingPolicy: UNKNOWN
+    description: "보형물이 있음을 판단"
+  condImplantConditionIntact:
+    input: implantCondition
+    op: "="
+    ref: "온전"
+    refType: string
+    missingPolicy: UNKNOWN
+    description: "보형물 상태 확인 (온전)"
+  condImplantConditionDamaged:
+    input: implantCondition
+    op: "="
+    ref: "손상"
+    refType: string
+    missingPolicy: UNKNOWN
+    description: "보형물 상태 확인 (손상)"
+  condLipoOnly:
+    input: upsellAccept
+    op: "="
+    ref: false
+    refType: boolean
+    missingPolicy: UNKNOWN
+    description: "지방흡입 + 이식 권유 수용여부 확인 (미수용)"
+  condLipoPlusTransfer:
+    input: upsellAccept
+    op: "="
+    ref: true
+    refType: boolean
+    missingPolicy: UNKNOWN
+    description: "지방흡입 + 이식 권유 수용여부 확인 (수용)"
+  condGeneralTransfer:
+    input: transferType
+    op: "="
+    ref: "일반"
+    refType: string
+    missingPolicy: UNKNOWN
+    description: "지방이식 타입을 확인 (일반)"
+  condStemCellTransfer:
+    input: transferType
+    op: "="
+    ref: "줄기세포"
+    refType: string
+    missingPolicy: UNKNOWN
+    description: "지방이식 타입을 확인 (줄기세포)"
+
+# =============================================================================
+# DecisionRule 정의 (Neo4j DecisionRule 노드 생성용)
+# =============================================================================
+decision_rules:
+  ruleBodyFatHigh:
+    description: "표준 프로토콜 판정 규칙 / 사용자의 bmi 확인"
+  ruleBodyFatLow:
+    description: "저지방 프로토콜 판정 규칙 / 사용자의 bmi 확인"
+  ruleStandardGuide:
+    description: "표준 프로토콜 수술 안내 가이드"
+  ruleLowFatGuideA:
+    description: "표준 프로토콜 수술 안내 가이드A"
+  ruleLowFatGuideB:
+    description: "표준 프로토콜 수술 안내 가이드B"
+  ruleRegionStandard:
+    description: "국내 거주자 (근거리 거주자)"
+  ruleRegionSemiRemote:
+    description: "국내 거주자 (서울, 경기권 제외)"
+  ruleRegionRemote:
+    description: "해외 거주자"
+  ruleInbodyPhotoUpload:
+    description: "인바디 관련 사진 업로드"
+  ruleCancerNone:
+    description: "유방암 이력 없음"
+  ruleCancerConditional:
+    description: "유방암 이력 존재, 부분 절제"
+  ruleCancerNotAllowed:
+    description: "유방암 이력 존재, 완전 절제"
+  ruleImplantNone:
+    description: "보형물 없음"
+  ruleImplantIntact:
+    description: "보형물 있고 상태 양호"
+  ruleImplantDamaged:
+    description: "보형물 있고 파손/구축"
+  # DB에만 존재하는 추가 규칙
+  ruleImplantInhouse:
+    description: "보형물 존재, 보형물 상태 온전"
+  ruleImplantExternal:
+    description: "보형물 존재, 보형물 상태 손상"
+  ruleLipoOnly:
+    description: "지방흡입만"
+  ruleLipoPlusEligible:
+    description: "지방흡입 + 이식"
+  ruleStemcellTransfer:
+    description: "줄기세포 지방이식"
+  ruleGeneralTransfer:
+    description: "일반 지방이식"
+
+# =============================================================================
+# Guide 선택 규칙 (protocolMode/조건 기반)
+# =============================================================================
+guide_selection:
+  p1InformSurgery:
+    condition_var: protocolMode
+    mapping:
+      STANDARD: [guideGraftInfoStandard]
+      LOW-FAT: [guideGraftInfoLowFat]
+  p4PreCollect:
+    condition_var: protocolMode
+    mapping:
+      STANDARD: [guideStandardPremise]
+      SEMI-REMOTE: [guideSemiremotePremise]
+      FULL: [guideAbroadPremise]
+  p4Collect:
+    condition_var: protocolMode
+    mapping:
+      STANDARD: [guideStandardInbody]
+      SEMI-REMOTE: [guideSemiremoteInbody]
+      FULL: [guideAbroadInbody]
+  p4AskLifestyle:
+    condition_var: protocolMode
+    mapping:
+      STANDARD: [guideStandardRecovery]
+      SEMI-REMOTE: [guideSemiremoteLogic]
+      FULL: [guideAbroadLogic]
+  p4AskDetail:
+    condition_var: protocolMode
+    mapping:
+      SEMI-REMOTE: [guideSemiremoteProcess]
+      FULL: [guideAbroadProcess]
+  p4InformSurgery:
+    condition_var: protocolMode
+    mapping:
+      STANDARD: [guideStandardProcess]
+      SEMI-REMOTE: [guideSemiremoteRoute]
+      FULL: [guideAbroadProtocol]
+  p4InformInfo:
+    condition_var: protocolMode
+    mapping:
+      STANDARD: [guideStandardUpload]
+      SEMI-REMOTE: [guideSemiremoteUpload]
+      FULL: [guideAbroadUpload]
+  p4Confirm:
+    condition_var: protocolMode
+    mapping:
+      STANDARD: [guideStandardBooking]
+      SEMI-REMOTE: [guideSemiremoteBooking]
+      FULL: [guideAbroadBooking]
+  p4Finalize:
+    condition_var: protocolMode
+    mapping:
+      STANDARD: [guideStandardPostCare]
+      SEMI-REMOTE: [guideSemiremotePostCare]
+      FULL: [guideAbroadPostCare]
+
+# =============================================================================
+# 조건부 스킵 규칙
+# =============================================================================
+skip_rules:
+  implantCondition:
+    when: { implantPresence: "false" }
+    action: skip
+    description: "보형물 없으면 보형물 상태 불필요"
+  implantOriginHospital:
+    when: { implantPresence: "false" }
+    action: skip
+    description: "보형물 없으면 원래 병원 불필요"
+  domesticDistrict:
+    when: { residenceCountry: "ABROAD" }
+    action: skip
+    description: "해외 거주시 국내 지역구 불필요"
+  weightGainPlan:
+    when: { weightGainIntent: "false" }
+    action: skip
+    description: "체중 증량 의사 없으면 증량 계획 불필요"
+  nutritionConsult:
+    when: { weightGainIntent: "false" }
+    action: skip
+    description: "체중 증량 의사 없으면 영양 상담 불필요"
+  inbodyPhotoUpload:
+    when: { inbodyAvailable: "false" }
+    action: skip
+    description: "InBody 없으면 사진 업로드 불필요"
+  pastOpsSite:
+    when:
+      pastOps: ["없음", "없습니다", "false", "none", "no", "처음"]
+    action: skip
+    description: "과거 시술 없으면 시술 부위 불필요"
+
+# =============================================================================
+# 자동 계산 슬롯
+# =============================================================================
+auto_compute:
+  bmi:
+    requires: [bodyInfo]
+    compute: compute_bmi
+    description: "키/체중 → BMI 자동 계산"
+  regionBucket:
+    requires: [residenceCountry]
+    compute: compute_region_bucket
+    description: "거주국/국내지역 → 권역(S1~S6/ABROAD) 자동 매핑"
+
+# =============================================================================
+# 룩업 테이블
+# =============================================================================
+lookup_tables:
+  region_bucket:
+    서울: S1
+    경기: S2
+    인천: S2
+    대전: S3
+    세종: S3
+    충남: S3
+    충북: S3
+    충청: S3
+    부산: S4
+    대구: S4
+    울산: S4
+    경남: S4
+    경북: S4
+    광주: S5
+    전남: S5
+    전북: S5
+    전라: S5
+    강원: S6
+    제주: S6
+
+# =============================================================================
+# Flow 엔진 기본값
+# =============================================================================
+flow_defaults:
+  stale_step_threshold: 3
+  rag_search_k: 2
+  rag_search_min_score: 0.5
+  rag_context_max_length: 1000
+  history_window_size: 6
+
+# =============================================================================
+# 페르소나 키워드 매핑 (flow.py PERSONA_KEYWORDS 외부화)
+# =============================================================================
+persona_keywords:
+  ambiguity_threshold: 1
+  keywords:
+    slimBody:
+      - "슬림"
+      - "마른"
+      - "체형"
+      - "체지방"
+      - "다이어트"
+      - "복부"
+      - "팔뚝"
+      - "허벅지"
+      - "바디"
+      - "체중"
+      - "지방이식"
+      - "지방주입"
+      - "fat grafting"
+      - "fat transfer"
+      - "채취"
+      - "채취량"
+      - "생착"
+      - "생착률"
+      - "도너부위"
+      - "채취 부위"
+      - "뺄 데"
+      - "지방이 없어서"
+      - "체지방 부족"
+      - "체지방률"
+      - "저체중"
+      - "근육량"
+      - "벌크업"
+      - "살찌우기"
+      - "증량"
+      - "벌크"
+      - "체중 늘리기"
+      - "운동선수"
+      - "바디프로필"
+      - "피트니스"
+      - "보디빌딩"
+      - "출산"
+      - "산후"
+      - "모유수유"
+      - "산후 다이어트"
+      - "트랜스젠더"
+      - "트랜스"
+      - "호르몬"
+      - "hrt"
+      - "제 몸에도 가능"
+      - "대안"
+      - "가능 여부"
+    lipoCustomer:
+      - "지방흡입"
+      - "지방이식"
+      - "리포"
+      - "흡입"
+      - "람스"
+      - "바디라인"
+      - "라인 정리"
+      - "fat transfer"
+      - "빼고 채우는"
+      - "효과 언제"
+      - "안정화"
+      - "붓기 빠지면"
+      - "울퉁불퉁"
+      - "비대칭"
+      - "재수술 위험"
+      - "가성비"
+      - "비용 대비"
+      - "가격 차이"
+      - "추가 비용"
+      - "줄기세포"
+      - "svf"
+      - "prp"
+      - "농축"
+      - "일반 지방이식"
+      - "장단점"
+      - "효과 차이"
+      - "바로 상담"
+      - "빨리 진행"
+      - "이번 주"
+      - "다음 주"
+    skinTreatment:
+      - "피부"
+      - "레이저"
+      - "보톡스"
+      - "필러"
+      - "리프팅"
+      - "피부과"
+      - "여드름"
+      - "주름"
+      - "안티에이징"
+      - "팔자주름"
+      - "팔자"
+      - "볼 꺼짐"
+      - "볼살"
+      - "중안부"
+      - "나이 들어 보임"
+      - "동안"
+      - "어려 보이고 싶"
+      - "필러 해봤"
+      - "보톡스 해봤"
+      - "효과가 금방 빠졌"
+      - "오래 유지"
+      - "지속"
+      - "한 번에"
+      - "리터치"
+      - "재시술"
+      - "다시 꺼짐"
+      - "안전"
+      - "회복기간"
+      - "붓기"
+      - "멍"
+      - "통증"
+      - "일상생활"
+      - "쉽게 설명"
+      - "직관적"
+      - "차이가 뭐예요"
+    longDistance:
+      - "원거리"
+      - "타지역"
+      - "해외"
+      - "지방거주"
+      - "교통"
+      - "유학"
+      - "캐나다"
+      - "토론토"
+      - "미국"
+      - "일본"
+      - "중국"
+      - "호주"
+      - "영국"
+      - "출국"
+      - "입국"
+      - "비행기"
+      - "항공"
+      - "시차"
+      - "해외번호"
+      - "방문 기간"
+      - "체류 기간"
+      - "당일"
+      - "하루 만에"
+      - "원데이"
+      - "내원 횟수"
+      - "몇 번"
+      - "방문 횟수"
+      - "빠른 일정"
+      - "비행기 타도 되나요"
+      - "장거리 이동"
+      - "출국 전"
+      - "부산"
+      - "대구"
+      - "대전"
+      - "광주"
+      - "제주"
+      - "강원"
+    revisionFatigue:
+      - "재수술"
+      - "부작용"
+      - "재교정"
+      - "불만족"
+      - "수정"
+      - "보형물"
+      - "리비전"
+      - "이전 수술"
+      - "기존 보형물"
+      - "몇 년 전 수술"
+      - "제거"
+      - "완전 제거"
+      - "빼고"
+      - "교체"
+      - "보형물 종류 변경"
+      - "석회화"
+      - "괴사"
+      - "구형구축"
+      - "파열"
+      - "염증"
+      - "피막"
+      - "캡슐렉토미"
+      - "비대칭"
+      - "처짐"
+      - "모양 교정"
+      - "사이즈 줄이기"
+      - "사이즈 키우기"
+      - "이물감"
+      - "딱딱"
+      - "촉감"
+      - "심리적 거부"
+      - "흉터"
+      - "비노출"
+      - "절개 위치"
+      - "원스텝"
+      - "한번에 끝"
+      - "최소 횟수"
+    P1_BreastConsult:
+      - "가슴"
+      - "유방"
+      - "브레스트"
+      - "가슴성형"
+      - "가슴확대"
+      - "가슴축소"
+    P2_FaceConsult:
+      - "코"
+      - "눈"
+      - "얼굴"
+      - "안면"
+      - "윤곽"
+      - "턱"
+      - "이마"
+      - "쌍꺼풀"
+      - "코성형"
+  signal_rules:
+    slimBody:
+      - signals: ["지방이식", "마른"]
+        bonus: 3
+      - signals: ["지방이식", "채취"]
+        bonus: 3
+      - signals: ["체지방", "부족"]
+        bonus: 3
+      - signals: ["체지방", "낮"]
+        bonus: 2
+      - signals: ["증량", "지방이식"]
+        bonus: 2
+    lipoCustomer:
+      - signals: ["흡입", "이식"]
+        bonus: 3
+      - signals: ["줄기세포", "지방이식"]
+        bonus: 3
+      - signals: ["비용 대비", "효과"]
+        bonus: 2
+    skinTreatment:
+      - signals: ["팔자", "볼"]
+        bonus: 3
+      - signals: ["자연스럽", "유지"]
+        bonus: 2
+      - signals: ["필러", "보톡스"]
+        bonus: 2
+      - signals: ["안전", "회복"]
+        bonus: 2
+    longDistance:
+      - signals: ["해외", "일정"]
+        bonus: 3
+      - signals: ["유학", "한국"]
+        bonus: 3
+      - signals: ["체류", "기간"]
+        bonus: 3
+      - signals: ["출국", "비행기"]
+        bonus: 3
+      - signals: ["내원", "횟수"]
+        bonus: 2
+    revisionFatigue:
+      - signals: ["재수술", "이물감"]
+        bonus: 4
+      - signals: ["재수술", "가슴"]
+        bonus: 4
+      - signals: ["보형물", "제거"]
+        bonus: 4
+      - signals: ["보형물", "구형구축"]
+        bonus: 4
+      - signals: ["이전 수술", "가슴"]
+        bonus: 4
+      - signals: ["석회화", "괴사"]
+        bonus: 3
+      - signals: ["보형물", "딱딱"]
+        bonus: 3
+      - signals: ["보형물", "빼고"]
+        bonus: 3
+  p5_required_signals:
+    - "재수술"
+    - "재교정"
+    - "리비전"
+    - "이전 수술"
+    - "기존 보형물"
+    - "몇 년 전 수술"
+    - "보형물"
+    - "제거"
+    - "교체"
+    - "구형구축"
+    - "이물감"
+    - "석회화"
+    - "괴사"
+    - "피막"
+  disambiguation_questions:
+    "lipoCustomer,slimBody": >-
+      지방이식에 관심이 있으시군요!
+      혹시 체형이 마른 편이시거나 채취할 지방이 충분할지 걱정이 되시나요,
+      아니면 지방흡입과 이식을 함께 고려하고 계신가요?
+  default_disambiguation_question: >-
+    좀 더 정확한 상담을 위해 여쭤볼게요. 어떤 부분이 가장 고민이신가요?
