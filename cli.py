@@ -78,6 +78,7 @@ def get_flow_engine(
     fast_mode: bool = False,
     model_override: str | None = None,
     consultation_scoring_mode: str = "hybrid",
+    intent_mode: str = "llm",
 ) -> FlowEngine:
     """
     FlowEngine 인스턴스 생성 (비동기 클라이언트 포함)
@@ -114,6 +115,7 @@ def get_flow_engine(
         slot_extraction_model=slot_model,
         max_response_tokens=max_tokens,
         consultation_scoring_mode=consultation_scoring_mode,
+        intent_mode=intent_mode,
     )
 
 
@@ -183,11 +185,15 @@ def cmd_turn(args):
         print(f"🆕 새 세션 생성: {session_id}")
 
     consultation_mode = getattr(args, "consultation_scoring", "hybrid")
+    intent_mode = getattr(args, "intent_mode", "llm")
 
     with get_core(db_mode) as core:
+        core.init_qa_store()  # Hybrid RAG: Q&A 벡터 스토어 초기화
+
         flow = get_flow_engine(
             core, model_override=model_override,
             consultation_scoring_mode=consultation_mode,
+            intent_mode=intent_mode,
         )
 
         # 턴 처리
@@ -210,6 +216,7 @@ def cmd_repl(args):
     db_mode = args.db
     model_override = getattr(args, "model", None)
     consultation_mode = getattr(args, "consultation_scoring", "hybrid")
+    intent_mode = getattr(args, "intent_mode", "llm")
 
     storage = get_state_storage()
 
@@ -232,12 +239,16 @@ def cmd_repl(args):
         print("⚡ Fast 모드 활성화 (gpt-4o-mini로 slot 추출)")
     if consultation_mode != "off":
         print(f"🎭 상담 Persona 스코어링: {consultation_mode} 모드")
+    print(f"🔀 의도 분류 모드: {intent_mode}")
     print("종료하려면 'quit' 또는 'exit'를 입력하세요.\n")
 
     with get_core(db_mode) as core:
+        core.init_qa_store()  # Hybrid RAG: Q&A 벡터 스토어 초기화
+
         flow = get_flow_engine(
             core, fast_mode=fast_mode, model_override=model_override,
             consultation_scoring_mode=consultation_mode,
+            intent_mode=intent_mode,
         )
 
         # 초기 메시지 (시나리오가 없으면)
@@ -485,6 +496,10 @@ def main():
     db_parent.add_argument(
         "--consultation-scoring", choices=["hybrid", "llm", "off"], default="hybrid",
         help="상담 Persona 스코어링 모드 (기본: hybrid)"
+    )
+    db_parent.add_argument(
+        "--intent-mode", choices=["rule", "llm", "hybrid"], default="llm",
+        help="Hybrid RAG 의도 분류 모드 (기본: llm)"
     )
 
     # setup-schema

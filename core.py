@@ -178,6 +178,9 @@ class Core:
         self._embedding_cache: OrderedDict[str, list[float]] = OrderedDict()
         self._embedding_cache_max_size: int = 1000
 
+        # Q&A 벡터 스토어 (Hybrid RAG)
+        self.qa_store = None  # QAVectorStore, lazy init via init_qa_store()
+
     def close(self):
         """리소스 정리"""
         if self.driver:
@@ -331,6 +334,50 @@ class Core:
                     break
 
         return unique_chunks
+
+    # =========================================================================
+    # Q&A 벡터 스토어 (Hybrid RAG)
+    # =========================================================================
+
+    def init_qa_store(
+        self,
+        docs_dir: str | None = None,
+        cache_path: str | None = None,
+    ) -> None:
+        """Q&A 벡터 스토어 초기화. pickle 캐시 우선, 없으면 JSONL+NPZ에서 빌드."""
+        from rag.store import QAVectorStore
+
+        store = QAVectorStore()
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+
+        _cache = cache_path or os.path.join(base_dir, "rag_cache.pkl")
+        if store.load_from_cache(_cache):
+            self.qa_store = store
+            return
+
+        _docs_dir = docs_dir or os.path.join(base_dir, "jisikin")
+        jsonl_path = os.path.join(_docs_dir, "rag_docs.jsonl")
+        npz_path = os.path.join(_docs_dir, "rag_docs.embeddings.npz")
+
+        if os.path.exists(jsonl_path):
+            count = store.load_from_jsonl(jsonl_path, npz_path)
+            store.save_cache(_cache)
+            self.qa_store = store
+            logger.info(f"Q&A 벡터 스토어 구축: {count}건, 캐시 저장 → {_cache}")
+        else:
+            logger.warning(f"JSONL 파일 없음: {jsonl_path}")
+
+    def qa_search(
+        self,
+        query: str,
+        k: int = 3,
+        min_score: float = 0.45,
+    ) -> list:
+        """Q&A 벡터 스토어 검색. Core.embed() 캐시 활용."""
+        if not self.qa_store or not self.qa_store.is_ready:
+            return []
+        embedding = self.embed(query)
+        return self.qa_store.search(embedding, k=k, min_score=min_score)
 
     # =========================================================================
     # 비동기 Vector Search (전략 4)

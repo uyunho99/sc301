@@ -1,17 +1,18 @@
 # SC301 Graph RAG Chatbot - Code Specification
 
-> **Date:** 2026-02-28
-> **Version:** v4 (상담 Persona 스코어링, scripts 디렉토리, 함수 상세 업데이트)
+> **Date:** 2026-03-07
+> **Version:** v5 (Hybrid RAG: jisikin QA 스토어, flow/schema 패키지 분리, intent 분류)
 
 ---
 
 ## 1. Architecture Overview
 
-SC301은 **Graph RAG 기반 성형외과(가슴성형) 상담 챗봇**으로, Neo4j 그래프 DB에 저장된 온톨로지(Persona → Scenario → Step)를 따라가며 사용자와 대화를 진행하는 시스템이다.
+SC301은 **Hybrid RAG 기반 성형외과 상담 챗봇**으로, Neo4j 그래프 DB에 저장된 온톨로지(Persona → Scenario → Step)를 따라가며 사용자와 대화를 진행하고, 지식인 Q&A 벡터 스토어로 일반 질문에도 대응하는 시스템이다.
 
 ### 핵심 설계 원칙
 
 - **Graph-Driven Flow**: 대화 흐름이 하드코딩이 아닌 Neo4j 그래프의 Step → Step 관계로 정의됨
+- **Hybrid RAG**: GraphRAG(Neo4j 벡터 검색) + QA 벡터 스토어(jisikin 165K 문서)를 의도 분류 기반으로 결합
 - **Slot-Based State Management**: 각 Step에서 수집해야 할 정보(CheckItem)를 slot으로 관리, 모두 수집 시 다음 Step으로 전이
 - **LLM-Powered Extraction + Generation**: OpenAI LLM이 사용자 발화에서 slot 값을 추출하고, 상황에 맞는 응답을 생성
 - **Static Routing Table**: 분기 로직은 DB의 Transition/DecisionRule 노드 대신 Python dict(`BRANCHING_RULES`)로 관리하여 성능과 디버깅 편의성 확보
@@ -20,107 +21,132 @@ SC301은 **Graph RAG 기반 성형외과(가슴성형) 상담 챗봇**으로, Ne
 ### 레이어 구조
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  CLI Layer (cli.py)                                      │
-│  - argparse 기반 명령행 진입점                           │
-│  - REPL(동기/비동기/스트리밍), 단일 턴, 디버그 커맨드    │
-├─────────────────────────────────────────────────────────┤
-│  Business Logic Layer (flow.py)                          │
-│  - FlowEngine: 턴 처리 파이프라인 오케스트레이터          │
-│  - Persona 판별 (키워드 + 복합신호 + disambiguation)     │
-│  - Step 전이 (BRANCHING_RULES + TO + leadsTo)            │
-│  - Slot 추출 (LLM) + 자동 계산 + 조건부 스킵             │
-│  - 상담 Persona 스코어링 (톤/전략 레이어)                │
-│  - 프롬프트 빌더 (Step 유형별 시스템 프롬프트)            │
-├─────────────────────────────────────────────────────────┤
-│  State Layer (state.py)                                  │
-│  - ConversationState: 세션 상태 데이터 클래스             │
-│  - Slot 관리, Prefetch, History, 직렬화                  │
-│  - Storage: File / Redis 추상화                          │
-├─────────────────────────────────────────────────────────┤
-│  Infrastructure Layer (core.py)                          │
-│  - OpenAI 클라이언트 (동기/비동기)                        │
-│  - Neo4j 드라이버 (연결 풀 최적화)                       │
-│  - Embedding (MD5 LRU 캐시)                              │
-│  - Vector Search (Surgery + Step, min_score 필터)        │
-│  - TTL Ingestion (RDF → Neo4j 노드/관계)                │
-├─────────────────────────────────────────────────────────┤
-│  Schema Layer (schema.py)                                │
-│  - Cypher 쿼리 상수 65+ 개                               │
-│  - 정적 라우팅 테이블 (BRANCHING_RULES 등)               │
-│  - CheckItem 힌트, 상담 키워드/톤 전략                   │
-└─────────────────────────────────────────────────────────┘
-     ↕                    ↕
-  Neo4j DB           OpenAI API
-(그래프 온톨로지)    (임베딩/채팅)
++-------------------------------------------------------------+
+|  CLI Layer (cli.py)                                          |
+|  - argparse 기반 명령행 진입점                                |
+|  - REPL(동기/비동기/스트리밍), 단일 턴, 디버그 커맨드          |
++-------------------------------------------------------------+
+|  Business Logic Layer (flow/ 패키지)                          |
+|  - FlowEngine: Mixin 기반 턴 처리 파이프라인                  |
+|  - engine.py: Mixin 조합 + 캐시 관리                         |
+|  - persona.py: Persona 판별 (키워드 + 복합신호)               |
+|  - navigation.py: Step 전이 + 분기 평가                       |
+|  - slots.py: Slot 추출 (LLM) + 자동 계산 + 조건부 스킵        |
+|  - consultation.py: 상담 Persona 스코어링                     |
+|  - rag_intent.py: Hybrid RAG 의도 분류 + 컨텍스트 조합        |
+|  - prompt.py: Step 유형별 시스템 프롬프트 빌더                 |
+|  - turn.py: process_turn (동기/스트리밍/비동기) 오케스트레이션  |
++-------------------------------------------------------------+
+|  RAG Layer (rag_store.py)                                     |
+|  - QAVectorStore: jisikin JSONL+NPZ 인메모리 벡터 스토어       |
+|  - 코사인 유사도 검색 (numpy)                                 |
+|  - pickle 캐시 (rag_cache.pkl)                                |
++-------------------------------------------------------------+
+|  State Layer (state.py)                                       |
+|  - ConversationState: 세션 상태 데이터 클래스                  |
+|  - Slot 관리, Prefetch, History, 직렬화                       |
+|  - Storage: File / Redis 추상화                               |
++-------------------------------------------------------------+
+|  Infrastructure Layer (core.py)                               |
+|  - OpenAI 클라이언트 (동기/비동기)                             |
+|  - Neo4j 드라이버 (연결 풀 최적화)                             |
+|  - Embedding (MD5 LRU 캐시)                                   |
+|  - GraphRAG Vector Search (Surgery + Step, min_score 필터)    |
+|  - Q&A 벡터 스토어 초기화 + 검색 (init_qa_store / qa_search)  |
+|  - TTL Ingestion (RDF -> Neo4j 노드/관계)                     |
++-------------------------------------------------------------+
+|  Schema Layer (schema/ 패키지)                                |
+|  - queries.py: Cypher 쿼리 상수 65+ 개                        |
+|  - branching_rules.py: 정적 라우팅 테이블 (BRANCHING_RULES 등) |
+|  - slot_rules.py: CheckItem 힌트, 자동 계산, 조건부 스킵       |
+|  - consultation_config.py: 상담 키워드/톤/전략 데이터           |
+|  - guide_rules.py: Guide 선택 규칙                             |
+|  - rule_conditions.py: RULE_CONDITION_MAP, OR_LOGIC_RULES     |
+|  - ingestion.py: TTL Ingestion 관련 Cypher 쿼리               |
++-------------------------------------------------------------+
+     |                    |                    |
+  Neo4j DB           OpenAI API        jisikin/ (JSONL+NPZ)
+(그래프 온톨로지)    (임베딩/채팅)      (165K Q&A 벡터 스토어)
 ```
 
 ---
 
 ## 2. Main Workflow (턴 처리 파이프라인)
 
-사용자의 한 마디(턴) 입력부터 응답 생성까지의 전체 흐름. `FlowEngine.process_turn()` 메서드가 오케스트레이션한다.
+사용자의 한 마디(턴) 입력부터 응답 생성까지의 전체 흐름. `flow/turn.py`의 `TurnMixin._prepare_turn()` + `process_turn()` 메서드가 오케스트레이션한다.
 
 ```
 User Input
-    │
-    ▼
-┌──────────────────────────────────────────────────────────────┐
-│ 1. state.add_turn("user", text)                              │
-│    사용자 입력을 대화 히스토리에 기록                          │
-├──────────────────────────────────────────────────────────────┤
-│ 2. flow.resolve_persona_scenario(state, text)                │
-│    ┌─ 첫 턴: 키워드+복합신호 기반 Persona 판별               │
-│    │   → 모호하면 disambiguation 질문 반환 (턴 종료)         │
-│    │   → 명확하면 Persona → Scenario → 시작 Step 할당        │
-│    ├─ 2턴째(disambiguation 해소): 원본+답변 합산으로 재분류  │
-│    └─ 이미 시작됨: 스킵                                      │
-├──────────────────────────────────────────────────────────────┤
-│ 3. flow.extract_slots(state, text)     ←┐                    │
-│    현재 Step의 CheckItem 값을 LLM으로 추출 │ 병렬 실행       │
-│    + n+1 Step prefetch (비분기 시)        │ (ThreadPool)     │
-│ 5. core.vector_search_combined(text)   ←┘                    │
-│    Surgery + Step 벡터 검색 (RAG context)                     │
-├──────────────────────────────────────────────────────────────┤
-│ 3.5. flow.auto_compute_slots(state)                          │
-│      bmi, regionBucket 등 파생 슬롯 자동 계산                │
-├──────────────────────────────────────────────────────────────┤
-│ 3.55. flow.score_consultation_persona(state, text)           │
-│       상담 Persona 스코어링 (desire/body/social/service)     │
-│       → 누적 점수가 threshold(6.0) 초과 시 톤 확정           │
-├──────────────────────────────────────────────────────────────┤
-│ 3.6. Stale step 감지 (동일 Step 3턴 이상 → 미수집을 '미응답')│
-├──────────────────────────────────────────────────────────────┤
-│ 4. flow.next_step(state)                                     │
-│    다음 Step 결정 (평가 순서):                                │
-│    ① 현재 Step의 CheckItem 전부 수집되었는지 확인            │
-│       → 미수집 있으면 "stay" (현재 Step 유지)                │
-│    ② BRANCHING_RULES 조건 평가 → 분기                       │
-│       → protocolMode 설정 (STANDARD/LOW-FAT/FULL 등)         │
-│    ③ TO 관계 → 단일/다중 경로                               │
-│    ④ leadsTo 레거시 fallback                                │
-│    ⑤ None → 시나리오 종료                                   │
-│                                                              │
-│    state.move_to_step() + prefetch_slots 승격                │
-├──────────────────────────────────────────────────────────────┤
-│ 4.5. flow._chain_through_empty_steps(state)                  │
-│      inform 스텝 등 CheckItem 없는 스텝 연쇄 건너뛰기       │
-│      (최대 5회, 무한루프 방지)                                │
-│      → 건너뛴 inform의 Guide/Program 안내 내용 수집         │
-├──────────────────────────────────────────────────────────────┤
-│ 6. flow.build_step_prompt(step_id, state, rag_context)       │
-│    Step 유형별 시스템 프롬프트 생성                           │
-│    + 건너뛴 inform 안내 내용을 프롬프트 앞에 삽입            │
-│    + 상담 Persona 톤 지침 주입 (확정된 경우)                 │
-├──────────────────────────────────────────────────────────────┤
-│ 7. LLM 응답 생성 (streaming / blocking / async)              │
-│    system_prompt + history(최근 6턴) → OpenAI ChatCompletion │
-├──────────────────────────────────────────────────────────────┤
-│ 8. state.add_turn("assistant", response)                     │
-│    state 저장 (FileStorage / Redis)                          │
-└──────────────────────────────────────────────────────────────┘
-    │
-    ▼
+    |
+    v
++--------------------------------------------------------------+
+| 1. state.add_turn("user", text)                               |
+|    사용자 입력을 대화 히스토리에 기록                           |
++--------------------------------------------------------------+
+| 2. flow.resolve_persona_scenario(state, text)                 |
+|    +-- 첫 턴: 키워드+복합신호 기반 Persona 판별                |
+|    |   -> 모호하면 disambiguation 질문 반환 (턴 종료)          |
+|    |   -> 명확하면 Persona -> Scenario -> 시작 Step 할당       |
+|    +-- 2턴째(disambiguation 해소): 원본+답변 합산으로 재분류   |
+|    +-- 이미 시작됨: 스킵                                      |
++--------------------------------------------------------------+
+| 3. 병렬 실행 (ThreadPoolExecutor)                              |
+|    +-- flow.extract_slots(state, text)                        |
+|    |   현재 Step의 CheckItem 값을 LLM으로 추출                 |
+|    |   + n+1 Step prefetch (비분기 시)                         |
+|    |                                                          |
+|    +-- core.vector_search_combined(text)  [GraphRAG 검색]     |
+|    |   Surgery + Step 벡터 검색                                |
+|    |                                                          |
+|    +-- core.qa_search(text)  [QA 검색]                        |
+|        jisikin Q&A 벡터 스토어 검색 (165K 문서)                |
++--------------------------------------------------------------+
+| 3.5. flow.auto_compute_slots(state)                           |
+|      bmi, regionBucket 등 파생 슬롯 자동 계산                  |
++--------------------------------------------------------------+
+| 3.55. flow.score_consultation_persona(state, text)            |
+|       상담 Persona 스코어링 (desire/body/social/service)       |
+|       -> 누적 점수가 threshold(6.0) 초과 시 톤 확정            |
++--------------------------------------------------------------+
+| 3.6. Stale step 감지 (동일 Step 3턴 이상 -> 미수집을 '미응답') |
++--------------------------------------------------------------+
+| 3.7. Hybrid RAG 의도 분류 + 컨텍스트 조합                      |
+|      _classify_user_intent(): slot_data / general_question /  |
+|        mixed 분류 (rule / llm / hybrid 모드)                   |
+|      _assemble_rag_context(): GraphRAG + QA 컨텍스트를         |
+|        의도에 따라 가중치 조합                                  |
+|      -> general_question이면 offscript 템플릿 적용             |
++--------------------------------------------------------------+
+| 4. flow.next_step(state)                                      |
+|    다음 Step 결정 (평가 순서):                                 |
+|    (1) 현재 Step의 CheckItem 전부 수집되었는지 확인            |
+|       -> 미수집 있으면 "stay" (현재 Step 유지)                 |
+|    (2) BRANCHING_RULES 조건 평가 -> 분기                      |
+|       -> protocolMode 설정 (STANDARD/LOW-FAT/FULL 등)         |
+|    (3) TO 관계 -> 단일/다중 경로                               |
+|    (4) leadsTo 레거시 fallback                                 |
+|    (5) None -> 시나리오 종료                                   |
+|                                                               |
+|    state.move_to_step() + prefetch_slots 승격                  |
++--------------------------------------------------------------+
+| 4.5. flow._chain_through_empty_steps(state)                   |
+|      inform 스텝 등 CheckItem 없는 스텝 연쇄 건너뛰기          |
+|      (최대 5회, 무한루프 방지)                                  |
+|      -> 건너뛴 inform의 Guide/Program 안내 내용 수집           |
++--------------------------------------------------------------+
+| 6. flow.build_step_prompt(step_id, state, rag_context)        |
+|    Step 유형별 시스템 프롬프트 생성                             |
+|    + 건너뛴 inform 안내 내용을 프롬프트 앞에 삽입               |
+|    + 상담 Persona 톤 지침 주입 (확정된 경우)                    |
++--------------------------------------------------------------+
+| 7. LLM 응답 생성 (streaming / blocking / async)               |
+|    system_prompt + history(최근 6턴) -> OpenAI ChatCompletion  |
++--------------------------------------------------------------+
+| 8. state.add_turn("assistant", response)                      |
+|    state 저장 (FileStorage / Redis)                            |
++--------------------------------------------------------------+
+    |
+    v
 Bot Response
 ```
 
@@ -128,86 +154,120 @@ Bot Response
 
 ```
 첫 턴 사용자 입력
-    │
-    ▼
+    |
+    v
 _score_personas(): 7개 Persona별 점수 산출
-    │  ├── 키워드 매칭 (PERSONA_KEYWORDS)
-    │  ├── 복합 신호 보너스 (PERSONA_SIGNAL_RULES)
-    │  └── P5 필수 확증 검사 (재수술 키워드 없으면 감산)
-    │
-    ▼
+    |  +-- 키워드 매칭 (PERSONA_KEYWORDS)
+    |  +-- 복합 신호 보너스 (PERSONA_SIGNAL_RULES)
+    |  +-- P5 필수 확증 검사 (재수술 키워드 없으면 감산)
+    |
+    v
 상위 2개 Persona 점수차 비교
-    │
-    ├── 점수차 > AMBIGUITY_THRESHOLD(1) → 1위 Persona 확정
-    │       → Persona → Scenario → 시작 Step 할당
-    │
-    └── 점수차 ≤ 1 → disambiguation 질문 반환
-            → persona_disambiguation에 candidates + question 저장
-            → 다음 턴에서 원본+답변 합산 텍스트로 재분류
+    |
+    +-- 점수차 > AMBIGUITY_THRESHOLD(1) -> 1위 Persona 확정
+    |       -> Persona -> Scenario -> 시작 Step 할당
+    |
+    +-- 점수차 <= 1 -> disambiguation 질문 반환
+            -> persona_disambiguation에 candidates + question 저장
+            -> 다음 턴에서 원본+답변 합산 텍스트로 재분류
 ```
 
 ### 2.2. Step 전이 워크플로우
 
 ```
 현재 Step
-    │
-    ▼
+    |
+    v
 CheckItem 수집 완료 확인
-    │
-    ├── 미수집 항목 있음 → "stay" (현재 Step 유지, 질문 계속)
-    │
-    └── 전부 수집 완료
-         │
-         ├── BRANCHING_RULES에 있는 Step?
-         │       │
-         │       ├── Yes → 조건 평가 (priority DESC)
-         │       │         │
-         │       │         ├── DecisionRule 기반 (3-tier fallback)
-         │       │         │   ① CONSIDERS 관계 (DB)
-         │       │         │   ② RULE_CONDITION_MAP (하드코딩)
-         │       │         │   ③ WHEN → ConditionGroup (레거시)
-         │       │         │
-         │       │         ├── 직접 조건 (conditionVar 지정)
-         │       │         │
-         │       │         └── Default transition (isDefault=True)
-         │       │
-         │       │     → protocolMode 설정 (분기 결과에 따라)
-         │       │
-         │       └── No → TO 관계 follow
-         │               │
-         │               ├── 1개 → 그대로 이동
-         │               └── 다중 → 첫 번째로 이동
-         │
-         └── TO도 없으면 → leadsTo fallback → 없으면 "end"
+    |
+    +-- 미수집 항목 있음 -> "stay" (현재 Step 유지, 질문 계속)
+    |
+    +-- 전부 수집 완료
+         |
+         +-- BRANCHING_RULES에 있는 Step?
+         |       |
+         |       +-- Yes -> 조건 평가 (priority DESC)
+         |       |         |
+         |       |         +-- DecisionRule 기반 (3-tier fallback)
+         |       |         |   (1) CONSIDERS 관계 (DB)
+         |       |         |   (2) RULE_CONDITION_MAP (하드코딩)
+         |       |         |   (3) WHEN -> ConditionGroup (레거시)
+         |       |         |
+         |       |         +-- 직접 조건 (conditionVar 지정)
+         |       |         |
+         |       |         +-- Default transition (isDefault=True)
+         |       |
+         |       |     -> protocolMode 설정 (분기 결과에 따라)
+         |       |
+         |       +-- No -> TO 관계 follow
+         |               |
+         |               +-- 1개 -> 그대로 이동
+         |               +-- 다중 -> 첫 번째로 이동
+         |
+         +-- TO도 없으면 -> leadsTo fallback -> 없으면 "end"
 
-이동 후 → _chain_through_empty_steps()
-         → inform 스텝은 자동 통과 (Guide/Program 안내 수집)
+이동 후 -> _chain_through_empty_steps()
+         -> inform 스텝은 자동 통과 (Guide/Program 안내 수집)
 ```
 
-### 2.3. 상담 Persona 스코어링 워크플로우 (톤/전략 레이어)
+### 2.3. Hybrid RAG 의도 분류 워크플로우
+
+Hybrid RAG는 GraphRAG(Neo4j)와 QA 벡터 스토어(jisikin/)를 의도 기반으로 결합한다.
+
+```
+사용자 발화
+    |
+    +-- [병렬] GraphRAG 검색 (Neo4j 벡터 인덱스)
+    +-- [병렬] QA 검색 (jisikin/ 165K 문서, 코사인 유사도)
+    |
+    v
+_classify_user_intent(user_text, extracted_slot_count, qa_top_score)
+    |
+    +-- intent_mode = "rule":
+    |     질문 마커 + 슬롯 데이터 여부 + QA 점수로 판별
+    |
+    +-- intent_mode = "llm":
+    |     gpt-4o-mini로 3-class 분류
+    |
+    +-- intent_mode = "hybrid" (기본):
+    |     rule 우선 -> uncertain이면 LLM fallback
+    |
+    v
+의도 분류 결과:
+    +-- "slot_data":         GraphRAG 우선 + QA 보충 (>0.55)
+    +-- "general_question":  QA 우선 + GraphRAG 보충
+    +-- "mixed":             둘 다 포함
+    |
+    v
+_assemble_rag_context(): 의도별 가중치로 컨텍스트 조합
+    -> general_question이면 _OFFSCRIPT_TEMPLATE 적용
+       (QA 기반 답변 + 현재 Step 질문 복귀)
+```
+
+### 2.4. 상담 Persona 스코어링 워크플로우 (톤/전략 레이어)
 
 Flow 페르소나(시나리오 라우팅)와 독립적으로 동작하는 톤/전략 결정 시스템.
 4차원: desire(감정·심리), body(신체·건강), social(타인·이미지), service(서비스·효율)
 
 ```
 매 턴 사용자 입력
-    │
-    ▼
+    |
+    v
 consultation_scoring_mode 확인
-    │
-    ├── "off" → 스킵
-    ├── "hybrid" (기본)
-    │       │
-    │       ├── Rule 기반 스코어 (키워드 + 주어 패턴)
-    │       │   → 신호 합계 ≥ 2.0 → rule 스코어 사용
-    │       │   → 신호 합계 < 2.0 → LLM 스코어 fallback
-    │       │
-    │       └── 추천질문 매칭 보너스 (+3.0)
-    │
-    └── "llm" → LLM-as-Judge (gpt-4o-mini, 4차원 0~3점)
+    |
+    +-- "off" -> 스킵
+    +-- "hybrid" (기본)
+    |       |
+    |       +-- Rule 기반 스코어 (키워드 + 주어 패턴)
+    |       |   -> 신호 합계 >= 2.0 -> rule 스코어 사용
+    |       |   -> 신호 합계 < 2.0 -> LLM 스코어 fallback
+    |       |
+    |       +-- 추천질문 매칭 보너스 (+3.0)
+    |
+    +-- "llm" -> LLM-as-Judge (gpt-4o-mini, 4차원 0~3점)
 
-스코어 누적 → threshold(6.0) 초과 시 상담 Persona 확정
-    → _build_persona_context()에서 톤 지침 주입
+스코어 누적 -> threshold(6.0) 초과 시 상담 Persona 확정
+    -> _build_persona_context()에서 톤 지침 주입
        (strategy, trigger_expressions, guide_tone, taboo)
 ```
 
@@ -216,33 +276,38 @@ consultation_scoring_mode 확인
 ## 3. Module Dependency
 
 ```
-             ┌──────────┐
-             │  cli.py  │  ← 진입점 (argparse CLI)
-             └────┬─────┘
-                  │
-        ┌─────────┼──────────┐
-        ▼         ▼          ▼
-   ┌─────────┐ ┌─────────┐ ┌──────────┐
-   │ core.py │ │ flow.py │ │ state.py │
-   │ (인프라) │ │(비즈니스)│ │ (상태)   │
-   └────┬────┘ └────┬────┘ └──────────┘
-        │           │          ▲
-        │           └──────────┘ (flow가 state를 조작)
-        │           │
-        ▼           ▼
-   ┌──────────────────┐
-   │    schema.py     │  ← Cypher 쿼리 + 정적 라우팅 테이블
-   └──────────────────┘      + 상담 키워드/톤 전략
+             +----------+
+             |  cli.py  |  <- 진입점 (argparse CLI)
+             +----+-----+
+                  |
+        +---------+-----------+
+        v         v           v
+   +---------+ +---------+ +----------+
+   | core.py | | flow/   | | state.py |
+   | (인프라) | |(비즈니스)| | (상태)   |
+   +----+----+ +----+----+ +----------+
+        |           |          ^
+        |           +----------+ (flow가 state를 조작)
+        |           |
+        v           v
+   +------------------+
+   |    schema/        |  <- Cypher 쿼리 + 정적 라우팅 테이블
+   +------------------+      + 상담 키워드/톤 전략
+
+   +------------------+
+   |  rag_store.py    |  <- Q&A 벡터 스토어 (core.py에서 사용)
+   +------------------+
 
 독립 스크립트:
-   ┌──────────────┐  ┌────────────────────┐
-   │ patch_graph.py│  │ scripts/export_neo4j│
-   └──────────────┘  └────────────────────┘
-   Neo4j 패치 (마이그레이션)    Neo4j 데이터 Cypher 내보내기
+   +--------------+  +--------------------+  +------------------------+
+   | patch_graph.py|  | scripts/export_neo4j|  | jisikin/build_embeddings|
+   +--------------+  +--------------------+  +------------------------+
+   Neo4j 패치         Neo4j 데이터 내보내기    Q&A 임베딩 재생성
 
 External:
-  - OpenAI API (core.py → embedding/chat, flow.py → slot추출/응답)
-  - Neo4j DB (core.py → 연결관리, flow.py → 쿼리 실행)
+  - OpenAI API (core.py -> embedding/chat, flow/ -> slot추출/응답)
+  - Neo4j DB (core.py -> 연결관리, flow/ -> 쿼리 실행)
+  - jisikin/ (JSONL+NPZ -> rag_store.py -> core.py)
 ```
 
 ---
@@ -251,56 +316,96 @@ External:
 
 ```
 sc301/
-├── __init__.py              # 패키지 초기화 (ConversationState, Core, FlowEngine export)
-├── schema.py                # Cypher 쿼리 상수 + 정적 라우팅 테이블 + 상담 키워드/톤
-├── flow.py                  # FlowEngine: 턴 처리, 분기 평가, 슬롯 추출, 프롬프트 생성
-├── state.py                 # ConversationState + Storage (File/Redis)
-├── core.py                  # Core: OpenAI + Neo4j + Embedding + Vector Search + TTL Ingestion
-├── cli.py                   # CLI 진입점 (8개 서브커맨드)
-├── patch_graph.py           # Neo4j 그래프 패치 스크립트 (개인정보, P5 분리, CONSIDERS 보완)
-│
-├── scripts/
-│   └── export_neo4j.py      # Neo4j 데이터를 Cypher 텍스트로 내보내기
-│
-├── test_scenarios.py        # 단위/통합 테스트
-├── test_repl.py             # REPL 시뮬레이션 테스트
-├── test_persona_identification.py  # Persona 판별 테스트
-├── benchmark_scenarios.py   # 성능 벤치마크
-│
-├── requirements.txt         # Python 의존성
-├── .env                     # 환경변수 (API 키, DB 접속 정보)
-├── states/                  # 세션 상태 JSON 파일 저장 디렉토리
-├── backups/                 # Neo4j 데이터 내보내기 파일 저장
-│
-├── GRAPH_RAG_SPEC.md        # Graph RAG 전체 스펙 문서
-├── CODE_SPECIFICATION.md    # 코드 아키텍처 명세 (본 문서)
-├── TEST_SCENARIOS_GUIDE.md  # 테스트 시나리오 가이드
-├── REPL_SCENARIOS_DETAIL.md # REPL 시나리오 상세
-├── SETUP_GUIDE.md           # 환경 설정 가이드
-├── DEPLOYMENT_GUIDE.md      # 배포 가이드
-└── SERVER_GUIDE.md          # 서버 운영 가이드
++-- __init__.py              # 패키지 초기화 (ConversationState, Core, FlowEngine export)
+|
+|  -- 코어 모듈 --
++-- cli.py                   # CLI 진입점 (8개 서브커맨드)
++-- core.py                  # Core: OpenAI + Neo4j + Embedding + Vector Search + QA Store
++-- state.py                 # ConversationState + Storage (File/Redis)
++-- rag_store.py             # QAVectorStore: jisikin JSONL+NPZ 인메모리 벡터 스토어
+|
+|  -- flow/ 패키지 (비즈니스 로직) --
++-- flow/
+|   +-- __init__.py          # FlowEngine, StepInfo, TransitionResult export
+|   +-- _types.py            # StepInfo, TransitionResult, TurnContext 데이터 클래스
+|   +-- engine.py            # FlowEngine: Mixin 조합 + 캐시 관리
+|   +-- persona.py           # PersonaMixin: Persona 판별/Scenario 할당
+|   +-- navigation.py        # NavigationMixin: Step 전이, 분기 평가, Guide 선택
+|   +-- slots.py             # SlotMixin: LLM 슬롯 추출, 자동 계산, 조건부 스킵
+|   +-- consultation.py      # ConsultationMixin: 상담 Persona 스코어링
+|   +-- rag_intent.py        # RAGIntentMixin: Hybrid RAG 의도 분류 + 컨텍스트 조합
+|   +-- prompt.py            # PromptMixin: Step 유형별 프롬프트 생성
+|   +-- turn.py              # TurnMixin: process_turn 오케스트레이션
+|
+|  -- schema/ 패키지 (Neo4j 스키마 + 비즈니스 룰) --
++-- schema/
+|   +-- __init__.py          # 하위 호환: from schema import X 유지
+|   +-- queries.py           # Cypher 쿼리 상수 (Flow 조회, 벡터 검색 등)
+|   +-- ingestion.py         # TTL Ingestion Cypher (노드 Merge, 관계 생성, 임베딩)
+|   +-- branching_rules.py   # BRANCHING_RULES 정적 라우팅 테이블
+|   +-- rule_conditions.py   # RULE_CONDITION_MAP, OR_LOGIC_RULES
+|   +-- guide_rules.py       # GUIDE_SELECTION_RULES
+|   +-- slot_rules.py        # AUTO_COMPUTABLE_SLOTS, CONDITIONAL_SKIP_RULES, CHECKITEM_HINTS 등
+|   +-- consultation_config.py # 상담 키워드/톤/전략 데이터
+|
+|  -- jisikin/ (Q&A 벡터 스토어 데이터) --
++-- jisikin/
+|   +-- rag_docs.jsonl       # 165,009건 Q&A 문서 (네이버 지식인)
+|   +-- rag_docs.embeddings.npz  # 사전 계산 임베딩 (text-embedding-3-small, 1536d)
+|   +-- build_embeddings.py  # 임베딩 재생성 스크립트 (OpenAI API)
+|   +-- rag_docs.json        # 원본 JSON (참고용)
+|
+|  -- 그래프 유지보수 --
++-- patch_graph.py           # Neo4j 그래프 패치 스크립트 (3 패치셋)
+|
++-- scripts/
+|   +-- export_neo4j.py      # Neo4j 데이터를 Cypher 텍스트로 내보내기
+|   +-- encrypt_env.sh       # .env 암호화
+|   +-- decrypt_env.sh       # .env 복호화
+|   +-- setup_server.sh      # 서버 초기 세팅
+|   +-- import_neo4j.sh      # Cypher 파일로 Neo4j 데이터 임포트
+|
+|  -- 테스트 / 벤치마크 --
++-- test_scenarios.py        # 단위/통합 테스트
++-- test_repl.py             # REPL 시뮬레이션 테스트
++-- test_persona_identification.py  # Persona 판별 테스트
++-- benchmark_scenarios.py   # 성능 벤치마크
+|
+|  -- 설정 / 데이터 --
++-- requirements.txt         # Python 의존성
++-- .env                     # 환경변수 (API 키, DB 접속 정보)
++-- states/                  # 세션 상태 JSON 파일 저장 디렉토리
++-- backups/                 # Neo4j 데이터 내보내기 파일 저장
+|
+|  -- 문서 --
++-- CODE_SPECIFICATION.md    # 코드 아키텍처 명세 (본 문서)
++-- SETUP_GUIDE.md           # 환경 설정 가이드
++-- GRAPH_RAG_SPEC.md        # Graph RAG 전체 스펙 문서
++-- DEPLOYMENT_GUIDE.md      # 배포 가이드
++-- SERVER_GUIDE.md          # 서버 운영 가이드
++-- TEST_SCENARIOS_GUIDE.md  # 테스트 시나리오 가이드
++-- REPL_SCENARIOS_DETAIL.md # REPL 시나리오 상세
 ```
 
 ---
 
 ## 5. File-by-File Specification
 
-### 5.1. `schema.py` — Cypher 쿼리 & 정적 라우팅 테이블 & 상담 전략 데이터
+### 5.1. `schema/` — Neo4j 스키마 & 비즈니스 룰 패키지
 
-> Neo4j 스키마 정의, 모든 Cypher 쿼리 상수, 분기/스킵/계산 규칙 테이블, 상담 페르소나 키워드/톤/전략 데이터
+> 기존 `schema.py` 단일 파일을 7개 모듈로 분리. `from schema import X` 하위 호환 유지.
 
-#### 상수 카테고리
+#### 모듈 구성
 
-| 카테고리 | 상수명 | 개수 | 설명 |
-|----------|--------|------|------|
-| 네임스페이스 | `TTL_NAMESPACES` | 3 | ont, sample, webprotege URI |
-| 스키마 생성 | `SCHEMA_QUERIES` | 14 | Uniqueness Constraints |
-| 벡터 인덱스 | `VECTOR_INDEX_QUERIES` | 3 | Surgery, Step, CheckItem 벡터 인덱스 |
-| Flow 조회 | `QUERY_ALL_PERSONAS` 등 | 13 | Persona/Scenario/Step/CheckItem/Option 조회 |
-| 벡터 검색 | `QUERY_VECTOR_SEARCH_*` | 2 | Surgery, Step 벡터 검색 |
-| 노드 Merge | `QUERY_MERGE_*` | 14 | Persona~Threshold 노드 MERGE |
-| 관계 생성 | `QUERY_CREATE_REL_*` | 18 | 모든 관계 타입 MERGE |
-| 임베딩 | `QUERY_UPDATE_EMBEDDING` | 1 | 노드 임베딩 업데이트 |
+| 모듈 | 주요 상수 | 설명 |
+|------|-----------|------|
+| `queries.py` | `QUERY_ALL_PERSONAS`, `QUERY_VECTOR_SEARCH_*` 등 | Cypher 쿼리 상수 (Flow 조회 13종, 벡터 검색 2종) |
+| `ingestion.py` | `SCHEMA_QUERIES`, `VECTOR_INDEX_QUERIES`, `QUERY_MERGE_*`, `QUERY_CREATE_REL_*` | 스키마 생성, 노드 Merge 14종, 관계 생성 18종, 임베딩 업데이트 |
+| `branching_rules.py` | `BRANCHING_RULES` | 5개 분기점 × 총 16개 규칙 |
+| `rule_conditions.py` | `RULE_CONDITION_MAP`, `OR_LOGIC_RULES` | DecisionRule → Condition 매핑, OR 로직 규칙 |
+| `guide_rules.py` | `GUIDE_SELECTION_RULES` | 9개 Step × protocolMode → Guide ID 매핑 |
+| `slot_rules.py` | `AUTO_COMPUTABLE_SLOTS`, `CONDITIONAL_SKIP_RULES`, `SYSTEM_MANAGED_SLOTS`, `CHECKITEM_HINTS`, `REGION_BUCKET_MAP` | 슬롯 자동 계산, 조건부 스킵, 힌트 50+항목 |
+| `consultation_config.py` | `CONSULTATION_KEYWORDS`, `CONSULTATION_TONE_STRATEGIES` 등 | 상담 Persona 4차원 키워드/톤/전략 데이터 |
 
 #### 정적 라우팅 테이블
 
@@ -315,17 +420,6 @@ sc301/
 | `SYSTEM_MANAGED_SLOTS` | 1개 (protocolMode): 사용자에게 묻지 않는 슬롯 |
 | `CHECKITEM_HINTS` | 50+ 항목: 슬롯별 추출/프롬프트 힌트 (한국어) |
 | `REGION_BUCKET_MAP` | 16개: 국내 지역명 → S1~S6 매핑 |
-
-#### 상담 Persona 데이터 (톤/전략 레이어)
-
-| 상수 | 타입 | 설명 |
-|------|------|------|
-| `CONSULTATION_KEYWORDS` | `dict[str, list[str]]` | 4차원(desire/body/social/service) × 키워드 리스트 |
-| `CONSULTATION_SUBJECT_PATTERNS` | `dict[str, list[str]]` | 4차원 × 질문 주어 정규식 패턴 |
-| `CONSULTATION_SCORE_WEIGHTS` | `dict[str, float]` | 가중치: keyword_match=1.5, subject_pattern=1.0, recommended_q=3.0, llm_multiplier=1.5 |
-| `CONSULTATION_SCORE_THRESHOLD` | `float` | 확정 임계값: 6.0 |
-| `CONSULTATION_RECOMMENDED_Q_MAP` | `dict[str, str]` | 40개 추천질문 → 상담 페르소나 매핑 |
-| `CONSULTATION_TONE_STRATEGIES` | `dict[str, dict]` | 4차원별 상담 전략(strategy, trigger_expressions, guide_tone, taboo) |
 
 #### 분기점 상세 (BRANCHING_RULES)
 
@@ -407,7 +501,7 @@ sc301/
 
 ### 5.3. `core.py` — 인프라 레이어
 
-> OpenAI LLM, Neo4j 드라이버, Embedding 캐싱, Vector RAG, TTL Ingestion 통합
+> OpenAI LLM, Neo4j 드라이버, Embedding 캐싱, Vector RAG, Q&A 벡터 스토어, TTL Ingestion 통합
 
 #### `CoreConfig` (dataclass)
 
@@ -442,7 +536,7 @@ sc301/
 
 | 카테고리 | 메서드 | 시그니처 | 설명 |
 |----------|--------|----------|------|
-| **초기화** | `__init__` | `(config: CoreConfig)` | OpenAI 클라이언트(동기+비동기) + Neo4j 드라이버 + 임베딩 캐시 초기화 |
+| **초기화** | `__init__` | `(config: CoreConfig)` | OpenAI 클라이언트(동기+비동기) + Neo4j 드라이버 + 임베딩 캐시 + qa_store=None 초기화 |
 | | `close` | `() -> None` | Neo4j 드라이버 종료 |
 | | `__enter__` / `__exit__` | — | Context manager 지원 |
 | **임베딩 캐시** | `_get_embedding_cache_key` | `(text: str) -> str` | 텍스트의 MD5 해시를 캐시 키로 생성 |
@@ -453,6 +547,8 @@ sc301/
 | | `vector_search_combined` | `(question, k=2, min_score=0.5) -> list[Chunk]` | Surgery + Step 동시 검색, 점수 정렬, 중복 제거, 상위 k*2개 반환 |
 | | `vector_search_async` | `async (question, k, search_type, min_score) -> list[Chunk]` | 비동기 벡터 검색 (asyncio.to_thread 래핑) |
 | | `vector_search_combined_async` | `async (question, k, min_score) -> list[Chunk]` | Surgery + Step 비동기 병렬 검색 (asyncio.gather) |
+| **Q&A 벡터 스토어** | `init_qa_store` | `(docs_dir=None, cache_path=None) -> None` | jisikin/ JSONL+NPZ 로드. pickle 캐시 우선 (rag_cache.pkl) |
+| | `qa_search` | `(query, k=3, min_score=0.45) -> list[QASearchResult]` | Q&A 벡터 검색. Core.embed() 캐시 활용 |
 | **스키마** | `ensure_schema` | `() -> None` | Neo4j constraints + vector index 생성 |
 | **TTL Ingestion** | `ingest_documents` | `(ttl_path: str, create_embeddings=True) -> dict` | TTL 파싱 → 노드/관계 생성 + 임베딩. 처리 통계 반환 |
 | | `_ingest_nodes` | `(session, g, ONT) -> dict` | RDF 타입별 노드 MERGE (Persona, Scenario, Step, CheckItem 등 9종) |
@@ -465,10 +561,68 @@ sc301/
 
 ---
 
-### 5.4. `flow.py` — 비즈니스 로직 레이어
+### 5.4. `rag_store.py` — Q&A 벡터 스토어
 
-> 턴 처리, Persona 판별, Step 전이, 분기 평가, 슬롯 추출, 상담 스코어링, 프롬프트 생성
-> **시스템의 핵심 비즈니스 로직 담당 (~2260 lines)**
+> jisikin/ JSONL+NPZ 기반 인메모리 벡터 스토어. Hybrid RAG의 QA 검색 담당.
+
+#### 데이터 클래스
+
+##### `JisikinEntry`
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `id` | `str` | 문서 ID ("K_0", "K_1", ...) |
+| `content` | `str` | "질문: ...\n답변: ..." 형태의 전체 텍스트 |
+| `question` | `str` | metadata.question (질문만) |
+| `answer` | `str` | metadata.answer (답변만) |
+
+##### `QASearchResult`
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `entry` | `JisikinEntry` | 검색된 Q&A 항목 |
+| `score` | `float` | 코사인 유사도 점수 |
+
+#### `QAVectorStore` 클래스
+
+| 카테고리 | 메서드 | 시그니처 | 설명 |
+|----------|--------|----------|------|
+| **속성** | `is_ready` | `@property -> bool` | 데이터+임베딩 로드 완료 여부 |
+| **로드** | `load_from_jsonl` | `(jsonl_path, npz_path) -> int` | JSONL 문서 로드 + NPZ 사전 임베딩 로드. ID 순서 검증. 로드 건수 반환 |
+| | `load_from_cache` | `(cache_path) -> bool` | pickle 캐시 로드. 성공 여부 반환 |
+| | `save_cache` | `(cache_path) -> None` | 현재 상태를 pickle 캐시로 저장 |
+| **검색** | `search` | `(query_embedding, k=3, min_score=0.45) -> list[QASearchResult]` | 코사인 유사도 기반 검색. 점수 내림차순 반환 |
+| **내부** | `_build_norms` | `() -> None` | 임베딩 행렬의 L2 정규화 버전 캐싱 |
+
+#### 로드 흐름
+
+```
+1. pickle 캐시 (rag_cache.pkl) 시도 -> 성공 시 완료
+2. JSONL (rag_docs.jsonl) + NPZ (rag_docs.embeddings.npz) 로드
+   -> pickle 캐시 저장 -> 완료
+3. NPZ 로드 실패 시 -> JSONL만 로드 (검색 불가, 경고 메시지)
+   -> 'python jisikin/build_embeddings.py' 안내
+```
+
+---
+
+### 5.5. `flow/` — 비즈니스 로직 레이어 (Mixin 패키지)
+
+> 기존 `flow.py` (~2260 lines)를 7개 Mixin 모듈로 분리. FlowEngine이 모든 Mixin을 다중 상속으로 조합.
+
+#### 패키지 구조
+
+| 모듈 | Mixin | 역할 |
+|------|-------|------|
+| `engine.py` | `FlowEngine` | Mixin 조합 + `__init__` + 캐시 관리 |
+| `_types.py` | — | `StepInfo`, `TransitionResult`, `TurnContext` 데이터 클래스 |
+| `persona.py` | `PersonaMixin` | Persona/Scenario 판별, 키워드 매칭, disambiguation |
+| `navigation.py` | `NavigationMixin` | Step 전이, 분기 평가, Guide 선택, 빈 스텝 체인 |
+| `slots.py` | `SlotMixin` | LLM 슬롯 추출, 자동 계산, 조건부 스킵 |
+| `consultation.py` | `ConsultationMixin` | 상담 Persona 4차원 스코어링 |
+| `rag_intent.py` | `RAGIntentMixin` | Hybrid RAG 의도 분류 + 컨텍스트 조합 + 검색 헬퍼 |
+| `prompt.py` | `PromptMixin` | Step 유형별 시스템 프롬프트 빌더 |
+| `turn.py` | `TurnMixin` | process_turn 오케스트레이션 (동기/스트리밍/비동기) |
 
 #### 데이터 클래스
 
@@ -504,6 +658,7 @@ sc301/
 | `slot_extraction_model` | `str \| None` | `None` | 슬롯 추출 전용 모델 (미지정 시 chat_model) |
 | `max_response_tokens` | `int` | `500` | LLM 최대 응답 토큰 |
 | `consultation_scoring_mode` | `str` | `"hybrid"` | 상담 스코어링 모드: `"hybrid"` / `"llm"` / `"off"` |
+| `intent_mode` | `str` | `"hybrid"` | Hybrid RAG 의도 분류 모드: `"rule"` / `"llm"` / `"hybrid"` |
 
 #### `FlowEngine` 클래스 상수
 
@@ -517,9 +672,9 @@ sc301/
 | `PERSONA_DISAMBIGUATION_QUESTIONS` | `dict[tuple, str]` | Persona 쌍별 확인 질문 |
 | `DEFAULT_DISAMBIGUATION_QUESTION` | `str` | 기본 disambiguation 질문 |
 
-#### `FlowEngine` 메서드 (카테고리별)
+#### Mixin 메서드 (모듈별)
 
-##### A. 캐시 관리
+##### A. `engine.py` — 캐시 관리
 
 | 메서드 | 시그니처 | 설명 |
 |--------|----------|------|
@@ -527,7 +682,7 @@ sc301/
 | `_set_cache_timestamp` | `(cache_key: str) -> None` | 캐시 타임스탬프 설정 |
 | `clear_cache` | `() -> None` | 모든 캐시 초기화 (step, persona, scenario, condition, considers) |
 
-##### B. Persona / Scenario 해석
+##### B. `persona.py` — PersonaMixin
 
 | 메서드 | 시그니처 | 설명 |
 |--------|----------|------|
@@ -538,16 +693,19 @@ sc301/
 | `_score_personas` | `(user_text, personas) -> list[dict]` | 전체 Persona 점수 산출 (키워드 매칭 + 복합 신호 보너스 + P5 필수확증 감산). score DESC 정렬 반환 |
 | `_infer_persona` | `(user_text, personas) -> str` | 최고 점수 Persona ID 반환. 모든 0점이면 첫 번째 Persona |
 
-##### C. 자동 계산 / 조건부 스킵
+##### C. `slots.py` — SlotMixin
 
 | 메서드 | 시그니처 | 설명 |
 |--------|----------|------|
+| `extract_slots` | `(state, user_text, step_id=None) -> ConversationState` | LLM으로 현재+n+1 Step CheckItem 값 추출. n+1은 prefetch_slots에 분리 저장. 분기점이면 현재 Step만 |
+| `_build_variable_desc` | `(ci, state) -> str \| None` | CheckItem → LLM 추출 프롬프트용 설명. AUTO/SYSTEM/SKIP 대상은 None. Option 열거값/CHECKITEM_HINTS 포함 |
+| `_get_checkitem_options` | `(check_item_id: str) -> list[dict]` | CheckItem의 Option(열거값) 목록 Neo4j 조회 |
 | `auto_compute_slots` | `(state) -> list[str]` | 파생 슬롯 자동 계산. 새로 계산된 슬롯명 리스트 반환 |
 | `_compute_bmi` | `(state) -> float \| None` | bodyInfo에서 키/체중 파싱 → BMI 계산. 3가지 패턴: (1) 170cm 65kg (2) 키 170 몸무게 65 (3) 170/65 |
 | `_compute_region_bucket` | `(state) -> str \| None` | residenceCountry + domesticDistrict → S1~S6/ABROAD. REGION_BUCKET_MAP 정확/부분 매칭 |
 | `should_skip_check_item` | `(var_name, state) -> bool` | SYSTEM_MANAGED_SLOTS + CONDITIONAL_SKIP_RULES 기반 스킵 판정. 선행 정보 없으면 스킵하지 않음 |
 
-##### D. Step 탐색
+##### D. `navigation.py` — NavigationMixin
 
 | 메서드 | 시그니처 | 설명 |
 |--------|----------|------|
@@ -556,11 +714,6 @@ sc301/
 | `_is_auto_transition_step` | `(step_id: str) -> bool` | inform 타입이면 True (사용자 입력 없이 자동 전이) |
 | `get_step_checks` | `(step_id: str) -> list[dict]` | Step의 CheckItem 목록 (CHECKS 관계, 캐시) |
 | `get_scenario_all_checks` | `(scenario_id: str) -> list[dict]` | 시나리오 전체 CheckItem (ASKS_FOR 관계, 캐시) |
-
-##### E. Step 전이
-
-| 메서드 | 시그니처 | 설명 |
-|--------|----------|------|
 | `next_step` | `(state) -> TransitionResult` | 다음 Step 결정. 평가 순서: (1) CheckItem 수집 확인 → (2) BRANCHING → (3) TO → (4) leadsTo → (5) end |
 | `_are_step_checks_filled` | `(step_id, state) -> bool` | Step의 필수 CheckItem 전부 수집 확인. 조건부 스킵/시스템관리/자동계산 항목은 "수집된 것"으로 간주 |
 | `_get_to_steps` | `(step_id: str) -> list[dict]` | TO 관계로 연결된 다음 Step 목록 |
@@ -568,45 +721,38 @@ sc301/
 | `_chain_through_empty_steps` | `(state) -> list[str]` | inform 등 빈 스텝 연쇄 건너뛰기 (최대 5회). 건너뛴 inform step ID 리스트 반환 |
 | `_build_skipped_inform_context` | `(skipped_steps, state) -> str` | 건너뛴 inform의 Guide/Program 안내 텍스트 생성. "[반드시 고객에게 설명]" 지시 포함 |
 | `_handle_stale_step` | `(state) -> None` | 3턴 교착 시 미수집 CheckItem → '미응답' 처리. confirm/finalize 스텝은 제외 |
-
-##### F. 분기 평가
-
-| 메서드 | 시그니처 | 설명 |
-|--------|----------|------|
 | `_evaluate_branching_rules` | `(step_id, state) -> TransitionResult \| None` | BRANCHING_RULES 정적 분기 평가. priority DESC 정렬, default fallback |
 | `_determine_protocol_mode` | `(rule, state) -> str \| None` | ruleId → protocolMode 결정 (STANDARD/LOW-FAT/FULL/SEMI-REMOTE/CONDITIONAL/NOT_ALLOWED) |
 | `_check_has_considers` | `() -> bool` | DB에 CONSIDERS 관계 존재 여부 확인 (1회 실행 후 캐싱) |
 | `_load_conditions_via_considers` | `(rule_id) -> list[dict] \| None` | CONSIDERS 관계로 Condition 로드. 없으면 None (fallback 신호) |
-| `_evaluate_rule_filtered` | `(rule_id, state) -> bool` | 3-tier fallback 평가: ① CONSIDERS → ② RULE_CONDITION_MAP → ③ WHEN legacy. OR_LOGIC_RULES 적용 |
+| `_evaluate_rule_filtered` | `(rule_id, state) -> bool` | 3-tier fallback 평가: (1) CONSIDERS → (2) RULE_CONDITION_MAP → (3) WHEN legacy. OR_LOGIC_RULES 적용 |
 | `_load_conditions` | `(condition_ids) -> list[dict]` | Condition 노드 로드 (개별 캐시) |
 | `_evaluate_rule_from_db` | `(rule_id, state) -> bool` | WHEN → ConditionGroup → HAS_CONDITION 레거시 평가 |
 | `_evaluate_condition` | `(condition, state) -> bool` | 단일 Condition 평가 (input/op/ref/refType + missingPolicy: TRUE/FALSE/UNKNOWN) |
 | `_compare_values` | `(actual, op, ref, ref_type) -> bool` | 값 비교: number(< <= > >= = !=), boolean(= !=), string(= !=) |
-
-##### G. Guide 선택
-
-| 메서드 | 시그니처 | 설명 |
-|--------|----------|------|
 | `select_guides` | `(step_id, state, all_guides) -> list[dict]` | GUIDE_SELECTION_RULES로 protocolMode별 Guide 필터링. 매칭 안되면 전체 반환 |
 
-##### H. Slot 추출
-
-| 메서드 | 시그니처 | 설명 |
-|--------|----------|------|
-| `extract_slots` | `(state, user_text, step_id=None) -> ConversationState` | LLM으로 현재+n+1 Step CheckItem 값 추출. n+1은 prefetch_slots에 분리 저장. 분기점이면 현재 Step만 |
-| `_build_variable_desc` | `(ci, state) -> str \| None` | CheckItem → LLM 추출 프롬프트용 설명. AUTO/SYSTEM/SKIP 대상은 None. Option 열거값/CHECKITEM_HINTS 포함 |
-| `_get_checkitem_options` | `(check_item_id: str) -> list[dict]` | CheckItem의 Option(열거값) 목록 Neo4j 조회 |
-
-##### I. 상담 Persona 스코어링 (톤/전략 레이어)
+##### E. `consultation.py` — ConsultationMixin
 
 | 메서드 | 시그니처 | 설명 |
 |--------|----------|------|
 | `score_consultation_persona` | `(state, user_text) -> None` | 매 턴 상담 Persona 신호 누적. threshold 초과 시 확정. 이미 확정됐으면 스킵 |
-| `_rule_score_consultation` | `(user_text) -> dict[str, float]` | Rule 기반: CONSULTATION_KEYWORDS 키워드 매칭(×1.5) + CONSULTATION_SUBJECT_PATTERNS 패턴(×1.0) |
-| `_llm_score_consultation` | `(user_text, state) -> dict[str, float]` | LLM-as-Judge: 경량 모델로 4차원 0~3점 JSON 반환 후 ×1.5 |
-| `_check_recommended_q_match` | `(user_text) -> dict[str, float]` | 추천질문 부분 문자열 매칭 (CONSULTATION_RECOMMENDED_Q_MAP, ×3.0) |
+| `_rule_score_consultation` | `(user_text) -> dict[str, float]` | Rule 기반: CONSULTATION_KEYWORDS 키워드 매칭(x1.5) + CONSULTATION_SUBJECT_PATTERNS 패턴(x1.0) |
+| `_llm_score_consultation` | `(user_text, state) -> dict[str, float]` | LLM-as-Judge: 경량 모델로 4차원 0~3점 JSON 반환 후 x1.5 |
+| `_check_recommended_q_match` | `(user_text) -> dict[str, float]` | 추천질문 부분 문자열 매칭 (CONSULTATION_RECOMMENDED_Q_MAP, x3.0) |
 
-##### J. 프롬프트 생성
+##### F. `rag_intent.py` — RAGIntentMixin
+
+| 메서드 | 시그니처 | 설명 |
+|--------|----------|------|
+| `_classify_user_intent` | `(user_text, extracted_slot_count, qa_top_score) -> str` | 의도 분류 (rule/llm/hybrid 모드). "slot_data" / "general_question" / "mixed" 반환 |
+| `_classify_intent_rule` | `(user_text, extracted_slot_count, qa_top_score) -> str` | 규칙 기반: 질문 마커 + 슬롯 데이터 + QA 점수로 분류 |
+| `_classify_intent_llm` | `(user_text) -> str` | LLM 기반: gpt-4o-mini로 3-class 분류 |
+| `_assemble_rag_context` | `(intent, graph_rag_context, qa_context, qa_score) -> str` | 의도에 따라 GraphRAG + QA 컨텍스트 가중치 조합 |
+| `_do_graph_rag_search` | `(core, user_text) -> tuple[str, float]` | GraphRAG 검색 (vector_search_combined, k=2) |
+| `_do_qa_search` | `(core, user_text) -> tuple[str, float]` | Q&A 검색 (qa_search, k=3, min_score=0.45) |
+
+##### G. `prompt.py` — PromptMixin
 
 | 메서드 | 시그니처 | 설명 |
 |--------|----------|------|
@@ -621,20 +767,21 @@ sc301/
 | `_build_finalize_prompt` | `(step, state, rag) -> str` | finalize: 상담 마무리 요약 + 다음 단계 안내 |
 | `_build_default_prompt` | `(step, state, rag) -> str` | 기본 프롬프트 |
 
-##### K. 턴 처리 (Full Turn)
+##### H. `turn.py` — TurnMixin
 
 | 메서드 | 시그니처 | 설명 |
 |--------|----------|------|
-| `process_turn` | `(state, user_text, core=None) -> tuple[str, ConversationState]` | 동기 턴 처리. slot추출 ∥ RAG검색 병렬 (ThreadPoolExecutor) |
+| `process_turn` | `(state, user_text, core=None) -> tuple[str, ConversationState]` | 동기 턴 처리. slot추출 + GraphRAG + QA검색 병렬 (ThreadPoolExecutor) |
 | `process_turn_streaming` | `(state, user_text, core=None) -> Generator` | 스트리밍 턴 처리. 청크 단위 yield → 마지막에 (response, state) yield |
 | `process_turn_async` | `async (state, user_text, core=None) -> tuple[str, ConversationState]` | 비동기 턴 처리. asyncio.to_thread + async OpenAI |
+| `_prepare_turn` | `(state, user_text, core) -> TurnContext` | 턴 준비: 병렬 실행(slot추출+GraphRAG+QA) → 의도 분류 → 컨텍스트 조합 |
 | `_generate_response` | `(system_prompt, history) -> str` | LLM 동기 응답 생성 (max_completion_tokens 제한) |
 | `_generate_response_streaming` | `(system_prompt, history) -> Generator[str]` | LLM 스트리밍 응답 생성 (delta.content yield) |
 | `_generate_response_async` | `async (system_prompt, history) -> str` | LLM 비동기 응답 생성 (AsyncOpenAI) |
 
 ---
 
-### 5.5. `cli.py` — 명령줄 인터페이스
+### 5.6. `cli.py` — 명령줄 인터페이스
 
 > 개발/운영용 CLI. `python -m sc301.cli <command>` 또는 `python cli.py <command>` 형태로 실행.
 
@@ -643,7 +790,7 @@ sc301/
 | 함수 | 시그니처 | 설명 |
 |------|----------|------|
 | `get_core` | `(db_mode="aura") -> Core` | Core 인스턴스 팩토리 |
-| `get_flow_engine` | `(core, fast_mode=False, model_override=None, consultation_scoring_mode="hybrid") -> FlowEngine` | FlowEngine 인스턴스 팩토리. MODEL_PRESETS 기반 모델 선택 |
+| `get_flow_engine` | `(core, fast_mode=False, model_override=None, consultation_scoring_mode="hybrid", intent_mode="hybrid") -> FlowEngine` | FlowEngine 인스턴스 팩토리. MODEL_PRESETS 기반 모델 선택 |
 | `get_state_storage` | `() -> StateStorage` | StateStorage 인스턴스 팩토리 (환경변수 기반) |
 
 #### 상수
@@ -661,8 +808,8 @@ MODEL_PRESETS = {
 |--------|------|------|
 | `setup-schema` | `cmd_setup_schema(args)` | Neo4j constraints + vector index 생성 |
 | `ingest <ttl_path>` | `cmd_ingest(args)` | TTL 파일 → Neo4j 적재 (`--no-embeddings` 옵션) |
-| `turn <session_id> <user_text>` | `cmd_turn(args)` | 단일 턴 실행 (테스트용). 상태 저장 포함 |
-| `repl [session_id]` | `cmd_repl(args)` | 대화형 REPL (`--no-streaming`, `--fast` 옵션). 스트리밍/일반 모드 분기 |
+| `turn <session_id> <user_text>` | `cmd_turn(args)` | 단일 턴 실행 (테스트용). QA 스토어 초기화 포함 |
+| `repl [session_id]` | `cmd_repl(args)` | 대화형 REPL. QA 스토어 초기화 + 스트리밍/일반 모드 분기 |
 | `repl-async [session_id]` | `cmd_repl_async(args)` → `_repl_async(args)` | 비동기 REPL (asyncio.run 래핑) |
 | `health` | `cmd_health(args)` | OpenAI + Neo4j 연결 상태 확인 |
 | `query <cypher>` | `cmd_query(args)` | Cypher 쿼리 직접 실행 (최대 20행 출력) |
@@ -675,6 +822,7 @@ MODEL_PRESETS = {
 | `--db` | `aura` \| `local` | Neo4j DB 모드 (기본: `aura`) |
 | `--model` | `gpt-4o` \| `gpt-5` | LLM 모델 프리셋 |
 | `--consultation-scoring` | `hybrid` \| `llm` \| `off` | 상담 Persona 스코어링 모드 (기본: `hybrid`) |
+| `--intent-mode` | `rule` \| `llm` \| `hybrid` | Hybrid RAG 의도 분류 모드 (기본: `hybrid`) |
 
 #### REPL 디버그 커맨드
 
@@ -687,7 +835,38 @@ MODEL_PRESETS = {
 
 ---
 
-### 5.6. `patch_graph.py` — Neo4j 그래프 패치 스크립트
+### 5.7. `jisikin/build_embeddings.py` — Q&A 임베딩 생성 스크립트
+
+> `rag_docs.jsonl`의 각 문서에 대해 OpenAI 임베딩을 생성하고 `rag_docs.embeddings.npz`로 저장.
+
+#### 상수
+
+| 상수 | 값 | 설명 |
+|------|---|------|
+| `EMBED_MODEL` | `text-embedding-3-small` | 임베딩 모델 |
+| `EMBED_DIM` | `1536` | 임베딩 차원 |
+| `MAX_CHARS_PER_DOC` | `3000` | 문서당 최대 문자 수 |
+| `DEFAULT_BATCH_SIZE` | `100` | API 배치 크기 |
+
+#### 함수
+
+| 함수 | 시그니처 | 설명 |
+|------|----------|------|
+| `load_jsonl` | `(jsonl_path) -> list[dict]` | JSONL 파일에서 문서 로드 |
+| `build_embeddings` | `(client, docs, batch_size) -> np.ndarray` | 배치 임베딩 생성 + L2 정규화. `(N, 1536)` shape 반환 |
+| `main` | `() -> None` | CLI 진입점. `--jsonl`, `--output`, `--batch-size` 옵션 |
+
+#### 사용법
+
+```bash
+python jisikin/build_embeddings.py                    # 기본 실행
+python jisikin/build_embeddings.py --batch-size 200   # 배치 크기 변경
+python jisikin/build_embeddings.py --output custom.npz  # 출력 파일 변경
+```
+
+---
+
+### 5.8. `patch_graph.py` — Neo4j 그래프 패치 스크립트
 
 > 일회성 그래프 마이그레이션 스크립트. 기존 그래프의 구조적 문제를 수정.
 
@@ -710,7 +889,7 @@ MODEL_PRESETS = {
 
 ---
 
-### 5.7. `scripts/export_neo4j.py` — Neo4j 데이터 Cypher 내보내기
+### 5.9. `scripts/export_neo4j.py` — Neo4j 데이터 Cypher 내보내기
 
 > 로컬 Neo4j 데이터를 Cypher 텍스트 파일로 내보내어 Community Edition에서 복원 가능하게 함.
 
@@ -730,7 +909,7 @@ MODEL_PRESETS = {
 
 ---
 
-### 5.8. `__init__.py` — 패키지 초기화
+### 5.10. `__init__.py` — 패키지 초기화
 
 ```python
 __version__ = "0.1.0"
@@ -742,26 +921,26 @@ __all__ = ["ConversationState", "Core", "FlowEngine", "__version__"]
 ## 6. Neo4j Graph Structure
 
 ```
-(Persona)──[:HAS_SCENARIO]──>(Scenario)──[:ASKS_FOR]──>(CheckItem)
-                                │
-                    ┌───(incoming TO 없는 Step = 시작)
-                    │
-                    ▼
-                 (Step)──[:TO]──>(Step)──[:TO]──>...
-                    │       │        │
+(Persona)--[:HAS_SCENARIO]-->(Scenario)--[:ASKS_FOR]-->(CheckItem)
+                                |
+                    +---(incoming TO 없는 Step = 시작)
+                    |
+                    v
+                 (Step)--[:TO]-->(Step)--[:TO]-->...
+                    |       |        |
             [:CHECKS]   [:GUIDED_BY]   [:REFERENCE]
-                    │       │              │
-                    ▼       ▼              ▼
+                    |       |              |
+                    v       v              v
               (CheckItem) (Guide)    (CheckItem)
-                    │
-              [:HAS_OPTION]──>(Option)
+                    |
+              [:HAS_OPTION]-->(Option)
 
-                 (Step)──[:RECOMMENDS]──>(Program)──[:HAS_SIDE_EFFECT]──>(SideEffect)
+                 (Step)--[:RECOMMENDS]-->(Program)--[:HAS_SIDE_EFFECT]-->(SideEffect)
 
-(Transition)──[:GUARDED_BY]──>(DecisionRule)──[:CONSIDERS]──>(Condition)
-                                             └──[:WHEN]──>(ConditionGroup)──[:HAS_CONDITION]──>(Condition)
+(Transition)--[:GUARDED_BY]-->(DecisionRule)--[:CONSIDERS]-->(Condition)
+                                             +--[:WHEN]-->(ConditionGroup)--[:HAS_CONDITION]-->(Condition)
 
-(Surgery)──[:causeSideEffect]──>(SideEffect)
+(Surgery)--[:causeSideEffect]-->(SideEffect)
 ```
 
 ### Node Types (14개)
@@ -834,16 +1013,19 @@ __all__ = ["ConversationState", "Core", "FlowEngine", "__version__"]
 
 | 전략 | 위치 | 설명 |
 |------|------|------|
-| 1. 메모리 캐싱 | flow.py | Step, Persona, Scenario, CheckItem, Condition 캐시 (TTL 5분) |
+| 1. 메모리 캐싱 | flow/engine.py | Step, Persona, Scenario, CheckItem, Condition 캐시 (TTL 5분) |
 | 2. 임베딩 캐싱 | core.py | MD5 해시 기반 LRU 캐시 (최대 1000개) |
-| 4. 비동기 처리 | core.py, flow.py | AsyncOpenAI, asyncio.to_thread, asyncio.gather |
+| 3. Q&A pickle 캐싱 | rag_store.py | 165K 문서+임베딩 pickle 캐시 (두 번째 로드부터 고속) |
+| 4. 비동기 처리 | core.py, flow/turn.py | AsyncOpenAI, asyncio.to_thread, asyncio.gather |
 | 5. Neo4j 연결 풀 | core.py | 최대 50개 연결, keep_alive, 타임아웃 설정 |
-| 6. LLM 스트리밍 | flow.py | SSE 스트리밍 응답 (REPL 실시간 출력) |
+| 6. LLM 스트리밍 | flow/turn.py | SSE 스트리밍 응답 (REPL 실시간 출력) |
 | 7. Vector Search 최적화 | core.py | min_score 필터링, Surgery+Step 합산 정렬, 중복 제거 |
-| 8. 프롬프트 최적화 | flow.py | 히스토리 6턴 제한, 가이드 500자 제한 |
-| 12. LLM 호출 제거 | flow.py | Persona 판별을 키워드+복합신호 기반으로 (LLM 미사용) |
-| 15. 병렬 실행 | flow.py | ThreadPoolExecutor로 slot 추출 ∥ RAG 검색 동시 |
-| 16. 자동 계산 | flow.py | BMI, regionBucket 파생 슬롯 자동 산출 |
+| 8. 프롬프트 최적화 | flow/prompt.py | 히스토리 6턴 제한, 가이드 500자 제한 |
+| 9. Hybrid RAG 의도 분류 | flow/rag_intent.py | rule 우선 + LLM fallback으로 불필요한 API 호출 최소화 |
+| 10. numpy 코사인 유사도 | rag_store.py | 행렬 연산으로 165K 문서 대상 밀리초 단위 검색 |
+| 11. LLM 호출 제거 | flow/persona.py | Persona 판별을 키워드+복합신호 기반으로 (LLM 미사용) |
+| 12. 병렬 실행 | flow/turn.py | ThreadPoolExecutor로 slot 추출 + GraphRAG + QA 검색 3-way 동시 |
+| 13. 자동 계산 | flow/slots.py | BMI, regionBucket 파생 슬롯 자동 산출 |
 
 ---
 
@@ -879,40 +1061,51 @@ REDIS_URL=redis://localhost:6379                  # redis 백엔드 시 필요
 
 ```
 [사용자 발화]
-     │
-     ▼
-┌─ CLI (cli.py) ─────────────────────────────┐
-│  cmd_repl() / cmd_turn()                     │
-│  → FileStateStorage.load() → state           │
-│  → FlowEngine.process_turn()                 │
-│     │                                        │
-│     ├──→ resolve_persona_scenario()          │
-│     │     └──→ Neo4j: QUERY_ALL_PERSONAS     │
-│     │     └──→ _score_personas() (로컬)      │
-│     │                                        │
-│     ├──→ extract_slots() ─────────┐ 병렬    │
-│     │     └──→ OpenAI: JSON mode  │          │
-│     │                             │          │
-│     ├──→ vector_search_combined()─┘          │
-│     │     └──→ OpenAI: embed()               │
-│     │     └──→ Neo4j: Vector Index           │
-│     │                                        │
-│     ├──→ auto_compute_slots() (로컬 계산)    │
-│     ├──→ score_consultation_persona()        │
-│     │     └──→ OpenAI (hybrid/llm mode)      │
-│     │                                        │
-│     ├──→ next_step()                         │
-│     │     └──→ Neo4j: QUERY_NEXT_STEPS_BY_TO │
-│     │     └──→ evaluate conditions (로컬+DB) │
-│     │                                        │
-│     ├──→ build_step_prompt() (로컬)          │
-│     │                                        │
-│     └──→ _generate_response()                │
-│           └──→ OpenAI: ChatCompletion        │
-│                                              │
-│  → FileStateStorage.save() → state           │
-└──────────────────────────────────────────────┘
-     │
-     ▼
+     |
+     v
++-- CLI (cli.py) -------------------------------------------+
+|  cmd_repl() / cmd_turn()                                   |
+|  -> FileStateStorage.load() -> state                       |
+|  -> core.init_qa_store()  (jisikin/ Q&A 벡터 스토어 로드)  |
+|  -> FlowEngine.process_turn()                              |
+|     |                                                      |
+|     +-->  resolve_persona_scenario()                       |
+|     |     +-->  Neo4j: QUERY_ALL_PERSONAS                  |
+|     |     +-->  _score_personas() (로컬)                   |
+|     |                                                      |
+|     +-->  [병렬 3-way]                                     |
+|     |     +-->  extract_slots()                            |
+|     |     |     +-->  OpenAI: JSON mode                    |
+|     |     |                                                |
+|     |     +-->  _do_graph_rag_search()                     |
+|     |     |     +-->  OpenAI: embed()                      |
+|     |     |     +-->  Neo4j: Vector Index                  |
+|     |     |                                                |
+|     |     +-->  _do_qa_search()                            |
+|     |           +-->  OpenAI: embed() (캐시)               |
+|     |           +-->  rag_store: numpy 코사인 유사도       |
+|     |                                                      |
+|     +-->  auto_compute_slots() (로컬 계산)                 |
+|     +-->  score_consultation_persona()                     |
+|     |     +-->  OpenAI (hybrid/llm mode)                   |
+|     |                                                      |
+|     +-->  _classify_user_intent()                          |
+|     |     +-->  rule/llm/hybrid 의도 분류                  |
+|     +-->  _assemble_rag_context()                          |
+|     |     +-->  의도 기반 GraphRAG + QA 컨텍스트 조합      |
+|     |                                                      |
+|     +-->  next_step()                                      |
+|     |     +-->  Neo4j: QUERY_NEXT_STEPS_BY_TO              |
+|     |     +-->  evaluate conditions (로컬+DB)              |
+|     |                                                      |
+|     +-->  build_step_prompt() (로컬)                       |
+|     |                                                      |
+|     +-->  _generate_response()                             |
+|           +-->  OpenAI: ChatCompletion                     |
+|                                                            |
+|  -> FileStateStorage.save() -> state                       |
++------------------------------------------------------------+
+     |
+     v
 [챗봇 응답]
 ```

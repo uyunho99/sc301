@@ -13,6 +13,10 @@ rdflib>=7.0.0
 # Environment
 python-dotenv>=1.0.0
 
+# Hybrid RAG: FAISS 벡터 스토어
+numpy>=1.24.0
+faiss-cpu>=1.7.0,<1.8.0
+
 # Optional: Redis for state storage
 # redis>=5.0.0
 

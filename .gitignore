@@ -39,3 +39,7 @@ DEPLOYMENT_GUIDE.md
 SERVER_GUIDE.md
 benchmark_analysis.md
 benchmark_analysis_v2.md
+
+# RAG
+jisikin/
+*.pkl
