@@ -231,7 +231,7 @@ _classify_user_intent(user_text, extracted_slot_count, qa_top_score)
     +-- intent_mode = "llm":
     |     gpt-4o-mini로 3-class 분류
     |
-    +-- intent_mode = "hybrid" (기본):
+    +-- intent_mode = "llm" (기본):
     |     rule 우선 -> uncertain이면 LLM fallback
     |
     v
@@ -304,10 +304,10 @@ consultation_scoring_mode 확인
    +------------------+
 
 독립 스크립트:
-   +--------------+  +--------------------+  +------------------------+
-   | patch_graph.py|  | scripts/export_neo4j|  | jisikin/build_embeddings|
-   +--------------+  +--------------------+  +------------------------+
-   Neo4j 패치         Neo4j 데이터 내보내기    Q&A 임베딩 재생성
+   +--------------+  +--------------------+
+   | patch_graph.py|  | scripts/export_neo4j|
+   +--------------+  +--------------------+
+   Neo4j 패치         Neo4j 데이터 내보내기
 
 External:
   - OpenAI API (core.py -> embedding/chat, flow/ -> slot추출/응답)
@@ -365,10 +365,6 @@ sc301/
 |   +-- rag_docs.embeddings.npz  # 사전 계산 임베딩 (text-embedding-3-small, 1536d)
 |   +-- rag_cache.pkl        # pickle 캐시
 |   +-- sc301_system_prompt3.txt  # 시스템 프롬프트
-|
-|  -- jisikin/ (개발 참고용) --
-+-- jisikin/
-|   +-- build_embeddings.py  # 임베딩 재생성 스크립트 (OpenAI API)
 |
 |  -- 그래프 유지보수 --
 +-- patch_graph.py           # Neo4j 그래프 패치 스크립트 (3 패치셋)
@@ -615,7 +611,6 @@ sc301/
 2. JSONL (rag_docs.jsonl) + NPZ (rag_docs.embeddings.npz) 로드
    -> pickle 캐시 저장 -> 완료
 3. NPZ 로드 실패 시 -> JSONL만 로드 (검색 불가, 경고 메시지)
-   -> 'python jisikin/build_embeddings.py' 안내
 ```
 
 ---
@@ -672,7 +667,7 @@ sc301/
 | `slot_extraction_model` | `str \| None` | `None` | 슬롯 추출 전용 모델 (미지정 시 chat_model) |
 | `max_response_tokens` | `int` | `500` | LLM 최대 응답 토큰 |
 | `consultation_scoring_mode` | `str` | `"hybrid"` | 상담 스코어링 모드: `"hybrid"` / `"llm"` / `"off"` |
-| `intent_mode` | `str` | `"hybrid"` | Hybrid RAG 의도 분류 모드: `"rule"` / `"llm"` / `"hybrid"` |
+| `intent_mode` | `str` | `"llm"` | Hybrid RAG 의도 분류 모드: `"rule"` / `"llm"` / `"hybrid"` |
 
 #### `FlowEngine` 클래스 상수
 
@@ -804,7 +799,7 @@ sc301/
 | 함수 | 시그니처 | 설명 |
 |------|----------|------|
 | `get_core` | `(db_mode="aura") -> Core` | Core 인스턴스 팩토리 |
-| `get_flow_engine` | `(core, fast_mode=False, model_override=None, consultation_scoring_mode="hybrid", intent_mode="hybrid") -> FlowEngine` | FlowEngine 인스턴스 팩토리. MODEL_PRESETS 기반 모델 선택 |
+| `get_flow_engine` | `(core, fast_mode=False, model_override=None, consultation_scoring_mode="hybrid", intent_mode="llm") -> FlowEngine` | FlowEngine 인스턴스 팩토리. MODEL_PRESETS 기반 모델 선택 |
 | `get_state_storage` | `() -> StateStorage` | StateStorage 인스턴스 팩토리 (환경변수 기반) |
 
 #### 상수
@@ -836,7 +831,7 @@ MODEL_PRESETS = {
 | `--db` | `aura` \| `local` | Neo4j DB 모드 (기본: `aura`) |
 | `--model` | `gpt-4o` \| `gpt-5` | LLM 모델 프리셋 |
 | `--consultation-scoring` | `hybrid` \| `llm` \| `off` | 상담 Persona 스코어링 모드 (기본: `hybrid`) |
-| `--intent-mode` | `rule` \| `llm` \| `hybrid` | Hybrid RAG 의도 분류 모드 (기본: `hybrid`) |
+| `--intent-mode` | `rule` \| `llm` \| `hybrid` | Hybrid RAG 의도 분류 모드 (기본: `llm`) |
 
 #### REPL 디버그 커맨드
 
@@ -849,38 +844,7 @@ MODEL_PRESETS = {
 
 ---
 
-### 5.7. `jisikin/build_embeddings.py` — Q&A 임베딩 생성 스크립트
-
-> `rag_docs.jsonl`의 각 문서에 대해 OpenAI 임베딩을 생성하고 `rag_docs.embeddings.npz`로 저장.
-
-#### 상수
-
-| 상수 | 값 | 설명 |
-|------|---|------|
-| `EMBED_MODEL` | `text-embedding-3-small` | 임베딩 모델 |
-| `EMBED_DIM` | `1536` | 임베딩 차원 |
-| `MAX_CHARS_PER_DOC` | `3000` | 문서당 최대 문자 수 |
-| `DEFAULT_BATCH_SIZE` | `100` | API 배치 크기 |
-
-#### 함수
-
-| 함수 | 시그니처 | 설명 |
-|------|----------|------|
-| `load_jsonl` | `(jsonl_path) -> list[dict]` | JSONL 파일에서 문서 로드 |
-| `build_embeddings` | `(client, docs, batch_size) -> np.ndarray` | 배치 임베딩 생성 + L2 정규화. `(N, 1536)` shape 반환 |
-| `main` | `() -> None` | CLI 진입점. `--jsonl`, `--output`, `--batch-size` 옵션 |
-
-#### 사용법
-
-```bash
-python jisikin/build_embeddings.py                    # 기본 실행
-python jisikin/build_embeddings.py --batch-size 200   # 배치 크기 변경
-python jisikin/build_embeddings.py --output custom.npz  # 출력 파일 변경
-```
-
----
-
-### 5.8. `patch_graph.py` — Neo4j 그래프 패치 스크립트
+### 5.7. `patch_graph.py` — Neo4j 그래프 패치 스크립트
 
 > 일회성 그래프 마이그레이션 스크립트. 기존 그래프의 구조적 문제를 수정.
 
@@ -903,7 +867,7 @@ python jisikin/build_embeddings.py --output custom.npz  # 출력 파일 변경
 
 ---
 
-### 5.9. `scripts/export_neo4j.py` — Neo4j 데이터 Cypher 내보내기
+### 5.8. `scripts/export_neo4j.py` — Neo4j 데이터 Cypher 내보내기
 
 > 로컬 Neo4j 데이터를 Cypher 텍스트 파일로 내보내어 Community Edition에서 복원 가능하게 함.
 
@@ -923,7 +887,7 @@ python jisikin/build_embeddings.py --output custom.npz  # 출력 파일 변경
 
 ---
 
-### 5.10. `__init__.py` — 패키지 초기화
+### 5.9. `__init__.py` — 패키지 초기화
 
 ```python
 __version__ = "0.1.0"

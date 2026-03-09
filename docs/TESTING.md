@@ -53,7 +53,7 @@ python benchmark_scenarios.py --db local -s p1std --csv result.csv
 
 ---
 
-## 시나리오 매핑: test_scenarios.py (20개) ↔ test_repl.py (17개)
+## 시나리오 매핑: test_scenarios.py (23개) ↔ test_repl.py (17개)
 
 | # | test_scenarios.py 테스트 ID | test_repl.py 키 | 유형 |
 |---|---------------------------|----------------|------|

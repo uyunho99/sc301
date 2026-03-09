@@ -114,7 +114,7 @@ STEP_CHECKPOINT_REQUIREMENTS: dict[str, list[str]] = {
     "p3AskLifestyle": ["activityPattern", "sunExposure", "skincareRoutine", "smoking"],
     "p3AskDetail": ["fatSourceAvailability", "allergyHistory", "pastOps", "botoxCycle", "fillerRemaining", "pastOpsSite"],
     "p3AskSurgery": ["concernArea", "desiredEffect", "durabilityExpectation"],
-    # p3InformSurgery: inform step (no user input)
+    # p3InformSugery: inform step (no user input)
     "p3Confirm": ["customerName", "phoneNumber", "surgeryWindow", "visitSchedule", "procedurePlan"],
 
     # ── P4 longDistance ──

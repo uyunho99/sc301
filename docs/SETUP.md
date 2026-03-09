@@ -151,15 +151,6 @@ pip install -r requirements.txt
 ### data/ Q&A 벡터 스토어 설정
 
 임베딩이 이미 생성되어 있으면 (`data/rag_docs.embeddings.npz`) 추가 작업 불필요.
-numpy 버전 호환 문제 등으로 NPZ 로드 실패 시 임베딩 재생성:
-
-```bash
-# 임베딩 재생성 (OpenAI API 키 필요, ~165K 문서)
-python jisikin/build_embeddings.py
-
-# 배치 크기 변경 (기본: 100)
-python jisikin/build_embeddings.py --batch-size 200
-```
 
 ### 수동 설정
 
@@ -198,7 +189,7 @@ python cli.py repl --db local --model gpt-4o      # gpt-4o 모델 사용 (기본
 > `--db` 옵션: `aura` (AuraDB 클라우드, 기본값) 또는 `local` (로컬 Neo4j)
 > `--model` 옵션: `gpt-4o` (기본값) 또는 `gpt-5`
 > `--consultation-scoring` 옵션: `hybrid` (기본값), `llm`, `off`
-> `--intent-mode` 옵션: `rule`, `llm`, `hybrid` (기본값) — Hybrid RAG 의도 분류 모드
+> `--intent-mode` 옵션: `rule`, `llm` (기본값), `hybrid` — Hybrid RAG 의도 분류 모드
 
 ### REPL 내부 명령어
 
@@ -217,12 +208,12 @@ python cli.py repl --db local --model gpt-4o      # gpt-4o 모델 사용 (기본
 ### 단위/통합 테스트 (test_scenarios.py)
 ```bash
 # Neo4j 로컬 필요, LLM 불필요
-python test_scenarios.py          # 20개 테스트 전체 실행
+python test_scenarios.py          # 23개 테스트 전체 실행
 ```
 
 ### REPL 시뮬레이션 (test_repl.py)
 ```bash
-# 14개 시나리오, 기본: slot 직접 주입 (LLM 불필요)
+# 17개 시나리오, 기본: slot 직접 주입 (LLM 불필요)
 python test_repl.py --db local -s all        # 전체 실행
 python test_repl.py --db local -s p1std      # 특정 시나리오
 python test_repl.py --db local -s p1std --step  # 턴마다 일시정지
@@ -255,7 +246,7 @@ Neo4j: LOCAL 모드
 모델: 응답=gpt-4o, 슬롯추출=gpt-4o-mini
 스트리밍 모드 활성화
 상담 Persona 스코어링: hybrid 모드
-의도 분류 모드: hybrid
+의도 분류 모드: llm
 종료하려면 'quit' 또는 'exit'를 입력하세요.
 
 Bot: 안녕하세요! 성형외과 상담 챗봇입니다. 어떤 상담이 필요하신가요?
@@ -407,7 +398,6 @@ python cli.py turn my-session "가슴 확대 비용이 궁금해요" --db local 
 
 ### Q&A 벡터 스토어 로드 실패
 - NPZ 파일이 존재하는지 확인: `ls data/rag_docs.embeddings.npz`
-- numpy 버전 호환 문제 시 임베딩 재생성: `python jisikin/build_embeddings.py`
 - pickle 캐시 오류 시 캐시 삭제 후 재시작: `rm data/rag_cache.pkl`
 
 ### Neo4j 데이터 복원 (2가지 방법)
@@ -432,5 +422,4 @@ python cli.py turn my-session "가슴 확대 비용이 궁금해요" --db local 
 
 ### Q&A 데이터 업데이트
 1. `data/rag_docs.jsonl` 교체 (id, content, metadata.question, metadata.answer 형식)
-2. 임베딩 재생성: `python jisikin/build_embeddings.py`
-3. pickle 캐시 삭제: `rm data/rag_cache.pkl` (다음 실행 시 자동 재생성)
+2. pickle 캐시 삭제: `rm data/rag_cache.pkl` (다음 실행 시 자동 재생성)
