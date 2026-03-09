@@ -1,5 +1,5 @@
 """
-schema/rule_conditions.py - Transition 조건 매핑
+config/conditions.py - Transition 조건 매핑
 
 RULE_CONDITION_MAP: 레거시 fallback용 조건 ID 매핑
 OR_LOGIC_RULES: OR 로직 사용 DecisionRule 집합

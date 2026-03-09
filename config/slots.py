@@ -1,5 +1,5 @@
 """
-schema/slot_rules.py - 슬롯 자동계산, 조건부 스킵, 힌트 규칙
+config/slots.py - 슬롯 자동계산, 조건부 스킵, 힌트 규칙
 
 AUTO_COMPUTABLE_SLOTS: 다른 슬롯으로부터 자동 계산 가능한 항목
 CONDITIONAL_SKIP_RULES: 선행 슬롯에 따라 스킵 가능한 항목

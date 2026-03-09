@@ -38,6 +38,9 @@ class TurnContext:
     history: list[dict] | None = None   # LLM용 대화 히스토리
     intent: str = "slot_data"           # 의도 분류 결과
     qa_context: str = ""                # 오프스크립트용 QA 컨텍스트
+    source_map: dict = field(default_factory=dict)   # 인용 rank→link 매핑
+    rag_mode: str = ""                               # "rag"|"no_rag"|"no_reference_fallback"
+    qa_results: list = field(default_factory=list)    # QASearchResult 리스트
 
 
 # 같은 스텝에 머무는 최대 턴 수. 초과 시 미수집 항목을 "미응답"으로 채워 진행.

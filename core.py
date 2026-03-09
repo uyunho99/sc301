@@ -14,7 +14,6 @@ from __future__ import annotations
 import os
 import logging
 import hashlib
-import time
 import asyncio
 from typing import Any
 from dataclasses import dataclass
@@ -205,32 +204,37 @@ class Core:
         """임베딩 캐시 초기화"""
         self._embedding_cache.clear()
 
+    def _get_cached_embedding(self, text: str) -> list[float] | None:
+        """캐시에서 임베딩 조회 (LRU 이동 포함). 없으면 None."""
+        cache_key = self._get_embedding_cache_key(text)
+        if cache_key in self._embedding_cache:
+            self._embedding_cache.move_to_end(cache_key)
+            return self._embedding_cache[cache_key]
+        return None
+
+    def _store_embedding(self, text: str, embedding: list[float]) -> None:
+        """임베딩을 캐시에 저장 (LRU 퇴거 포함)."""
+        cache_key = self._get_embedding_cache_key(text)
+        if len(self._embedding_cache) >= self._embedding_cache_max_size:
+            self._embedding_cache.popitem(last=False)
+        self._embedding_cache[cache_key] = embedding
+
     # =========================================================================
     # Embedding (전략 2: 캐싱 적용)
     # =========================================================================
 
     def embed(self, text: str) -> list[float]:
         """텍스트를 벡터로 변환 (캐싱 적용)"""
-        cache_key = self._get_embedding_cache_key(text)
+        cached = self._get_cached_embedding(text)
+        if cached is not None:
+            return cached
 
-        # 캐시 확인
-        if cache_key in self._embedding_cache:
-            # LRU: 최근 사용으로 이동
-            self._embedding_cache.move_to_end(cache_key)
-            return self._embedding_cache[cache_key]
-
-        # API 호출
         response = self.openai.embeddings.create(
             model=self.config.openai_embedding_model,
             input=text
         )
         embedding = response.data[0].embedding
-
-        # 캐시에 저장 (최대 크기 초과 시 가장 오래된 항목 제거)
-        if len(self._embedding_cache) >= self._embedding_cache_max_size:
-            self._embedding_cache.popitem(last=False)
-        self._embedding_cache[cache_key] = embedding
-
+        self._store_embedding(text, embedding)
         return embedding
 
     # =========================================================================
@@ -239,30 +243,65 @@ class Core:
 
     async def embed_async(self, text: str) -> list[float]:
         """비동기 임베딩 생성 (캐싱 적용)"""
-        cache_key = self._get_embedding_cache_key(text)
+        cached = self._get_cached_embedding(text)
+        if cached is not None:
+            return cached
 
-        # 캐시 확인
-        if cache_key in self._embedding_cache:
-            self._embedding_cache.move_to_end(cache_key)
-            return self._embedding_cache[cache_key]
-
-        # 비동기 API 호출
         response = await self.async_openai.embeddings.create(
             model=self.config.openai_embedding_model,
             input=text
         )
         embedding = response.data[0].embedding
-
-        # 캐시에 저장
-        if len(self._embedding_cache) >= self._embedding_cache_max_size:
-            self._embedding_cache.popitem(last=False)
-        self._embedding_cache[cache_key] = embedding
-
+        self._store_embedding(text, embedding)
         return embedding
 
     # =========================================================================
     # Vector Search (전략 7: min_score 필터링)
     # =========================================================================
+
+    def _get_vector_query(self, search_type: str) -> str:
+        """search_type에 해당하는 Cypher 쿼리 반환."""
+        if search_type == "surgery":
+            return QUERY_VECTOR_SEARCH_SURGERY
+        elif search_type == "step":
+            return QUERY_VECTOR_SEARCH_STEP
+        else:
+            raise ValueError(f"지원하지 않는 search_type: {search_type}")
+
+    @staticmethod
+    def _records_to_chunks(records, min_score: float) -> list[Chunk]:
+        """Neo4j 레코드를 Chunk 리스트로 변환 (min_score 미만 제외)."""
+        chunks = []
+        for record in records:
+            score = record["score"]
+            if score < min_score:
+                continue
+            content = f"{record.get('name', '')}: {record.get('desc', '')}"
+            chunks.append(Chunk(
+                id=record["id"],
+                content=content.strip(),
+                metadata={
+                    "name": record.get("name"),
+                    "category": record.get("category"),
+                    "stepType": record.get("stepType"),
+                },
+                score=score
+            ))
+        return chunks
+
+    @staticmethod
+    def _deduplicate_chunks(chunks: list[Chunk], limit: int) -> list[Chunk]:
+        """점수 기준 정렬, 중복 제거, 상위 limit개 반환."""
+        chunks.sort(key=lambda x: x.score, reverse=True)
+        seen_ids: set[str] = set()
+        unique: list[Chunk] = []
+        for chunk in chunks:
+            if chunk.id not in seen_ids:
+                seen_ids.add(chunk.id)
+                unique.append(chunk)
+                if len(unique) >= limit:
+                    break
+        return unique
 
     def vector_search(
         self,
@@ -276,34 +315,11 @@ class Core:
             raise RuntimeError("Neo4j 드라이버가 초기화되지 않음")
 
         embedding = self.embed(question)
-
-        if search_type == "surgery":
-            query = QUERY_VECTOR_SEARCH_SURGERY
-        elif search_type == "step":
-            query = QUERY_VECTOR_SEARCH_STEP
-        else:
-            raise ValueError(f"지원하지 않는 search_type: {search_type}")
+        query = self._get_vector_query(search_type)
 
         with self.driver.session() as session:
             result = session.run(query, embedding=embedding, k=k)
-            chunks = []
-            for record in result:
-                score = record["score"]
-                # min_score 미만 결과 제외 (전략 7)
-                if score < min_score:
-                    continue
-                content = f"{record.get('name', '')}: {record.get('desc', '')}"
-                chunks.append(Chunk(
-                    id=record["id"],
-                    content=content.strip(),
-                    metadata={
-                        "name": record.get("name"),
-                        "category": record.get("category"),
-                        "stepType": record.get("stepType"),
-                    },
-                    score=score
-                ))
-            return chunks
+            return self._records_to_chunks(result, min_score)
 
     def vector_search_combined(
         self,
@@ -318,22 +334,7 @@ class Core:
         step_chunks = self.vector_search(
             question, k=k, search_type="step", min_score=min_score
         )
-
-        # 점수 기준으로 합치고 정렬
-        all_chunks = surgery_chunks + step_chunks
-        all_chunks.sort(key=lambda x: x.score, reverse=True)
-
-        # 중복 제거 후 상위 k*2개만 반환
-        seen_ids = set()
-        unique_chunks = []
-        for chunk in all_chunks:
-            if chunk.id not in seen_ids:
-                seen_ids.add(chunk.id)
-                unique_chunks.append(chunk)
-                if len(unique_chunks) >= k * 2:
-                    break
-
-        return unique_chunks
+        return self._deduplicate_chunks(surgery_chunks + step_chunks, k * 2)
 
     # =========================================================================
     # Q&A 벡터 스토어 (Hybrid RAG)
@@ -350,12 +351,12 @@ class Core:
         store = QAVectorStore()
         base_dir = os.path.dirname(os.path.abspath(__file__))
 
-        _cache = cache_path or os.path.join(base_dir, "rag_cache.pkl")
+        _cache = cache_path or os.path.join(base_dir, "data", "rag_cache.pkl")
         if store.load_from_cache(_cache):
             self.qa_store = store
             return
 
-        _docs_dir = docs_dir or os.path.join(base_dir, "jisikin")
+        _docs_dir = docs_dir or os.path.join(base_dir, "data")
         jsonl_path = os.path.join(_docs_dir, "rag_docs.jsonl")
         npz_path = os.path.join(_docs_dir, "rag_docs.embeddings.npz")
 
@@ -370,8 +371,8 @@ class Core:
     def qa_search(
         self,
         query: str,
-        k: int = 3,
-        min_score: float = 0.45,
+        k: int = 5,
+        min_score: float = 0.35,
     ) -> list:
         """Q&A 벡터 스토어 검색. Core.embed() 캐시 활용."""
         if not self.qa_store or not self.qa_store.is_ready:
@@ -395,35 +396,12 @@ class Core:
             raise RuntimeError("Neo4j 드라이버가 초기화되지 않음")
 
         embedding = await self.embed_async(question)
+        query = self._get_vector_query(search_type)
 
-        if search_type == "surgery":
-            query = QUERY_VECTOR_SEARCH_SURGERY
-        elif search_type == "step":
-            query = QUERY_VECTOR_SEARCH_STEP
-        else:
-            raise ValueError(f"지원하지 않는 search_type: {search_type}")
-
-        # Neo4j 쿼리를 비동기로 래핑
         def run_query():
             with self.driver.session() as session:
                 result = session.run(query, embedding=embedding, k=k)
-                chunks = []
-                for record in result:
-                    score = record["score"]
-                    if score < min_score:
-                        continue
-                    content = f"{record.get('name', '')}: {record.get('desc', '')}"
-                    chunks.append(Chunk(
-                        id=record["id"],
-                        content=content.strip(),
-                        metadata={
-                            "name": record.get("name"),
-                            "category": record.get("category"),
-                            "stepType": record.get("stepType"),
-                        },
-                        score=score
-                    ))
-                return chunks
+                return self._records_to_chunks(result, min_score)
 
         return await asyncio.to_thread(run_query)
 
@@ -440,24 +418,8 @@ class Core:
         step_task = self.vector_search_async(
             question, k=k, search_type="step", min_score=min_score
         )
-
         surgery_chunks, step_chunks = await asyncio.gather(surgery_task, step_task)
-
-        # 점수 기준으로 합치고 정렬
-        all_chunks = surgery_chunks + step_chunks
-        all_chunks.sort(key=lambda x: x.score, reverse=True)
-
-        # 중복 제거 후 상위 k*2개만 반환
-        seen_ids = set()
-        unique_chunks = []
-        for chunk in all_chunks:
-            if chunk.id not in seen_ids:
-                seen_ids.add(chunk.id)
-                unique_chunks.append(chunk)
-                if len(unique_chunks) >= k * 2:
-                    break
-
-        return unique_chunks
+        return self._deduplicate_chunks(surgery_chunks + step_chunks, k * 2)
 
     # =========================================================================
     # Schema Management
@@ -703,54 +665,45 @@ class Core:
         }
         return param_mapping.get(rel_type, {"fromId": from_id, "toId": to_id})
 
+    def _embed_node_type(self, session, query: str, text_fn, label: str) -> None:
+        """단일 노드 타입에 대한 임베딩 생성 공통 루프."""
+        records = list(session.run(query))
+        for record in records:
+            text = text_fn(record)
+            if text.strip():
+                embedding = self.embed(text)
+                session.run(QUERY_UPDATE_EMBEDDING, id=record["id"], embedding=embedding)
+        if records:
+            logger.info(f"{label} 임베딩 생성: {len(records)}건")
+
     def _create_embeddings(self) -> None:
         """노드들에 대한 임베딩 생성"""
         if not self.driver:
             return
 
         with self.driver.session() as session:
-            # Surgery 임베딩
-            result = list(session.run(
-                "MATCH (s:Surgery) WHERE s.embedding IS NULL RETURN s.id AS id, s.name AS name, s.desc AS desc"
-            ))
-            for record in result:
-                text = f"{record['name']}: {record['desc'] or ''}"
-                if text.strip():
-                    embedding = self.embed(text)
-                    session.run(QUERY_UPDATE_EMBEDDING, id=record["id"], embedding=embedding)
-            if result:
-                logger.info(f"Surgery 임베딩 생성: {len(result)}건")
-
-            # Step 임베딩
-            result = list(session.run(
-                "MATCH (s:Step) WHERE s.embedding IS NULL RETURN s.id AS id, s.desc AS desc, s.type AS stepType, s.name AS name"
-            ))
-            for record in result:
-                text_parts = []
-                if record["name"]:
-                    text_parts.append(record["name"])
-                if record["stepType"]:
-                    text_parts.append(f"[{record['stepType']}]")
-                if record["desc"]:
-                    text_parts.append(record["desc"])
-                text = " ".join(text_parts)
-                if text.strip():
-                    embedding = self.embed(text)
-                    session.run(QUERY_UPDATE_EMBEDDING, id=record["id"], embedding=embedding)
-            if result:
-                logger.info(f"Step 임베딩 생성: {len(result)}건")
-
-            # CheckItem 임베딩
-            result = list(session.run(
-                "MATCH (c:CheckItem) WHERE c.embedding IS NULL RETURN c.id AS id, c.name AS name"
-            ))
-            for record in result:
-                text = record["name"] or record["id"]
-                if text.strip():
-                    embedding = self.embed(text)
-                    session.run(QUERY_UPDATE_EMBEDDING, id=record["id"], embedding=embedding)
-            if result:
-                logger.info(f"CheckItem 임베딩 생성: {len(result)}건")
+            self._embed_node_type(
+                session,
+                "MATCH (s:Surgery) WHERE s.embedding IS NULL RETURN s.id AS id, s.name AS name, s.desc AS desc",
+                lambda r: f"{r['name']}: {r['desc'] or ''}",
+                "Surgery",
+            )
+            self._embed_node_type(
+                session,
+                "MATCH (s:Step) WHERE s.embedding IS NULL RETURN s.id AS id, s.desc AS desc, s.type AS stepType, s.name AS name",
+                lambda r: " ".join(filter(None, [
+                    r["name"],
+                    f"[{r['stepType']}]" if r["stepType"] else None,
+                    r["desc"],
+                ])),
+                "Step",
+            )
+            self._embed_node_type(
+                session,
+                "MATCH (c:CheckItem) WHERE c.embedding IS NULL RETURN c.id AS id, c.name AS name",
+                lambda r: r["name"] or r["id"],
+                "CheckItem",
+            )
 
         logger.info("Embeddings 생성 완료")
 

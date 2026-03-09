@@ -6,93 +6,99 @@
 sc301/
 +-- .env                        # 환경 변수 설정 (gitignore)
 +-- .env.enc                    # 암호화된 환경 변수 (git 관리)
-+-- __init__.py                 # 패키지 초기화 (Core, FlowEngine, ConversationState 공개)
-+-- requirements.txt            # Python 의존성 (openai, neo4j, rdflib, python-dotenv, numpy)
++-- __init__.py                 # 패키지 초기화
++-- requirements.txt            # Python 의존성
 |
 |  -- 코어 모듈 --
-+-- cli.py                      # CLI 인터페이스 (8개 커맨드)
-+-- core.py                     # OpenAI + Neo4j + Q&A 벡터 스토어 통합 (CoreConfig, Core)
-+-- state.py                    # 세션 상태 관리 (ConversationState, FileStateStorage, RedisStateStorage)
-+-- rag_store.py                # Q&A 벡터 스토어 (jisikin JSONL+NPZ, 코사인 유사도 검색)
++-- cli.py                      # CLI 인터페이스
++-- core.py                     # OpenAI + Neo4j + Q&A 벡터 스토어 통합
++-- factories.py                # Core/FlowEngine/StateStorage 팩토리 함수
++-- state.py                    # 세션 상태 관리
 |
 |  -- flow/ 패키지 (비즈니스 로직) --
 +-- flow/
 |   +-- __init__.py             # FlowEngine, StepInfo, TransitionResult export
 |   +-- _types.py               # 데이터 클래스 (StepInfo, TransitionResult, TurnContext)
+|   +-- _helpers.py             # 내부 유틸리티 함수
 |   +-- engine.py               # FlowEngine: Mixin 조합 + 캐시 관리
 |   +-- persona.py              # PersonaMixin: Persona 판별/Scenario 할당
 |   +-- navigation.py           # NavigationMixin: Step 전이, 분기 평가
 |   +-- slots.py                # SlotMixin: LLM 슬롯 추출, 자동 계산, 조건부 스킵
 |   +-- consultation.py         # ConsultationMixin: 상담 Persona 스코어링
 |   +-- rag_intent.py           # RAGIntentMixin: Hybrid RAG 의도 분류 + 컨텍스트 조합
+|   +-- rag_postprocess.py      # RAG 후처리
 |   +-- prompt.py               # PromptMixin: Step 유형별 프롬프트 생성
-|   +-- turn.py                 # TurnMixin: process_turn 오케스트레이션 (동기/스트리밍/비동기)
+|   +-- turn.py                 # TurnMixin: process_turn 오케스트레이션
 |
-|  -- schema/ 패키지 (Neo4j 스키마 + 비즈니스 룰) --
+|  -- config/ 패키지 (비즈니스 규칙) --
++-- config/
+|   +-- __init__.py             # 전체 규칙 re-export
+|   +-- branching.py            # BRANCHING_RULES 정적 라우팅 테이블
+|   +-- conditions.py           # RULE_CONDITION_MAP, OR_LOGIC_RULES
+|   +-- guides.py               # GUIDE_SELECTION_RULES
+|   +-- slots.py                # AUTO_COMPUTABLE_SLOTS, CONDITIONAL_SKIP_RULES, CHECKITEM_HINTS
+|   +-- consultation.py         # 상담 키워드/톤/전략 데이터
+|
+|  -- schema/ 패키지 (Cypher 쿼리) --
 +-- schema/
 |   +-- __init__.py             # 하위 호환: from schema import X 유지
 |   +-- queries.py              # Cypher 쿼리 상수 (Flow 조회, 벡터 검색)
-|   +-- ingestion.py            # TTL Ingestion 관련 Cypher (노드 Merge, 관계 생성)
-|   +-- branching_rules.py      # BRANCHING_RULES 정적 라우팅 테이블
-|   +-- rule_conditions.py      # RULE_CONDITION_MAP, OR_LOGIC_RULES
-|   +-- guide_rules.py          # GUIDE_SELECTION_RULES
-|   +-- slot_rules.py           # AUTO_COMPUTABLE_SLOTS, CONDITIONAL_SKIP_RULES, CHECKITEM_HINTS
-|   +-- consultation_config.py  # 상담 키워드/톤/전략 데이터
+|   +-- ingestion.py            # TTL Ingestion 관련 Cypher
+|   +-- neo4j-aligned-schema.cypher  # Neo4j 스키마 정의
 |
-|  -- jisikin/ (Q&A 벡터 스토어 데이터) --
-+-- jisikin/
-|   +-- rag_docs.jsonl          # 165,009건 Q&A 문서 (네이버 지식인)
+|  -- rag/ 패키지 (벡터 스토어) --
++-- rag/
+|   +-- __init__.py
+|   +-- store.py                # QAVectorStore (FAISS 기반 벡터 검색)
+|
+|  -- data/ (RAG 데이터, gitignore) --
++-- data/
+|   +-- rag_docs.jsonl          # 165,009건 Q&A 문서
 |   +-- rag_docs.embeddings.npz # 사전 계산 임베딩 (text-embedding-3-small, 1536d)
-|   +-- build_embeddings.py     # 임베딩 재생성 스크립트 (OpenAI API 사용)
-|   +-- rag_docs.json           # 원본 JSON (참고용)
+|   +-- rag_cache.pkl           # pickle 캐시
+|   +-- sc301_system_prompt3.txt # 시스템 프롬프트
 |
 |  -- 그래프 유지보수 --
-+-- patch_graph.py              # Neo4j 그래프 패치 스크립트 (3 패치셋)
-+-- neo4j-aligned-schema.cypher # 정렬된 Neo4j 스키마 파일
++-- patch_graph.py              # Neo4j 그래프 패치 스크립트
 |
 |  -- 테스트 / 벤치마크 --
-+-- test_scenarios.py           # 단위/통합 테스트 20개 (Neo4j 직접, LLM 불필요)
-+-- test_repl.py                # REPL 시뮬레이션 14개 (TEST_SCENARIOS dict)
++-- test_scenarios.py           # 단위/통합 테스트 23개
++-- test_repl.py                # REPL 시뮬레이션 17개
 +-- test_persona_identification.py  # 페르소나 식별 테스트
-+-- benchmark_scenarios.py      # 성능 벤치마크 (test_repl.py의 시나리오 사용)
++-- benchmark_scenarios.py      # 성능 벤치마크
 |
 |  -- 스크립트 --
 +-- scripts/
-|   +-- encrypt_env.sh          # 로컬: .env -> .env.enc 암호화 (AES-256-CBC)
-|   +-- decrypt_env.sh          # 서버: .env.enc -> .env 복호화
-|   +-- setup_server.sh         # 서버 초기 세팅 (Python + Neo4j + clone + pip + 데이터 복원)
-|   +-- export_neo4j.py         # 로컬: Neo4j -> backups/neo4j_export.cypher 내보내기
-|   +-- import_neo4j.sh         # 서버: Cypher 파일로 Neo4j 데이터 임포트
-|   +-- dump_neo4j_local.sh     # 로컬: Neo4j Desktop -> backups/neo4j.dump
-|   +-- restore_neo4j.sh        # 서버: .dump 파일로 Neo4j 데이터 복원
+|   +-- encrypt_env.sh          # .env -> .env.enc 암호화
+|   +-- decrypt_env.sh          # .env.enc -> .env 복호화
+|   +-- export_neo4j.py         # Neo4j 내보내기
 |
 |  -- 문서 --
-+-- CODE_SPECIFICATION.md       # 코드 명세서 (모듈별 메서드/구조)
-+-- SETUP_GUIDE.md              # 이 파일
-+-- DEPLOYMENT_GUIDE.md         # AWS EC2 배포 가이드
-+-- SERVER_GUIDE.md             # 서버 관리 가이드
++-- README.md                   # 프로젝트 개요 (GitHub 랜딩 페이지)
 +-- GRAPH_RAG_SPEC.md           # Graph RAG 설계 명세
-+-- TEST_SCENARIOS_GUIDE.md     # 테스트 시나리오 가이드 (턴별 상세)
-+-- REPL_SCENARIOS_DETAIL.md    # REPL 14개 시나리오 턴별 상세
++-- docs/
+|   +-- ARCHITECTURE.md         # 코드 아키텍처 명세
+|   +-- SETUP.md                # 이 파일
+|   +-- TESTING.md              # 테스트 시나리오 가이드
 |
 |  -- 데이터 --
-+-- backups/                    # Neo4j 백업 (neo4j.dump, neo4j_export.cypher)
++-- backups/                    # Neo4j 백업
 +-- states/                     # 세션 상태 저장 디렉토리 (gitignore)
 ```
 
 ### 테스트/벤치마크 파일 의존 관계
 
 ```
-test_repl.py ---- TEST_SCENARIOS (14개 시나리오 + 발화 데이터)
+test_repl.py ---- TEST_SCENARIOS (17개 시나리오 + 발화 데이터)
   |                         |
   |                         +--> benchmark_scenarios.py (import해서 사용)
   |                                InstrumentedCore/FlowEngine 래퍼로 시간 측정
   |
-  +-- flow/, state.py, schema/ (공유)
+  +-- flow/, state.py, config/ + schema/ (공유)
 
 test_scenarios.py ---- 독립 실행 (TEST_SCENARIOS 미사용)
   |                    walk_scenario()로 slot 직접 주입 + assert 검증
-  +-- flow/, state.py, schema/ (공유)
+  +-- flow/, state.py, config/ + schema/ (공유)
 ```
 
 ## 필수 설정 사항
@@ -142,9 +148,9 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### jisikin/ Q&A 벡터 스토어 설정
+### data/ Q&A 벡터 스토어 설정
 
-임베딩이 이미 생성되어 있으면 (`jisikin/rag_docs.embeddings.npz`) 추가 작업 불필요.
+임베딩이 이미 생성되어 있으면 (`data/rag_docs.embeddings.npz`) 추가 작업 불필요.
 numpy 버전 호환 문제 등으로 NPZ 로드 실패 시 임베딩 재생성:
 
 ```bash
@@ -233,7 +239,7 @@ python benchmark_scenarios.py --db local -s p1std      # 특정 시나리오
 python benchmark_scenarios.py --db local --csv result.csv  # CSV 내보내기
 ```
 
-> 상세 시나리오 목록과 턴별 데이터는 `TEST_SCENARIOS_GUIDE.md` 참고
+> 상세 시나리오 목록과 턴별 데이터는 `docs/TESTING.md` 참고
 
 ---
 
@@ -292,7 +298,7 @@ python cli.py turn my-session "가슴 확대 비용이 궁금해요" --db local 
 | 3. 병렬 3-way 실행 (ThreadPoolExecutor)                       |
 |    +-- Slot Extraction: LLM으로 사용자 발화에서 값 추출       |
 |    +-- GraphRAG 검색: Neo4j 벡터 인덱스 (Surgery + Step)      |
-|    +-- QA 검색: jisikin/ 165K 문서 코사인 유사도 검색          |
+|    +-- QA 검색: data/ 165K 문서 코사인 유사도 검색             |
 +--------------------------------------------------------------+
                            |
                            v
@@ -400,9 +406,9 @@ python cli.py turn my-session "가슴 확대 비용이 궁금해요" --db local 
 - rate limit 초과 여부 확인
 
 ### Q&A 벡터 스토어 로드 실패
-- NPZ 파일이 존재하는지 확인: `ls jisikin/rag_docs.embeddings.npz`
+- NPZ 파일이 존재하는지 확인: `ls data/rag_docs.embeddings.npz`
 - numpy 버전 호환 문제 시 임베딩 재생성: `python jisikin/build_embeddings.py`
-- pickle 캐시 오류 시 캐시 삭제 후 재시작: `rm rag_cache.pkl`
+- pickle 캐시 오류 시 캐시 삭제 후 재시작: `rm data/rag_cache.pkl`
 
 ### Neo4j 데이터 복원 (2가지 방법)
 
@@ -420,11 +426,11 @@ python cli.py turn my-session "가슴 확대 비용이 궁금해요" --db local 
 2. Scenario 노드 생성 + `HAS_SCENARIO` 관계
 3. Step 노드들 생성 + `:TO` 관계로 연결
 4. CheckItem 노드 생성 + `:checks` 관계
-5. `schema/branching_rules.py`에 `BRANCHING_RULES` 분기 추가
-6. `schema/rule_conditions.py`에 `RULE_CONDITION_MAP` 조건 추가
+5. `config/branching.py`에 `BRANCHING_RULES` 분기 추가
+6. `config/conditions.py`에 `RULE_CONDITION_MAP` 조건 추가
 7. 데이터 내보내기: `python scripts/export_neo4j.py`
 
 ### Q&A 데이터 업데이트
-1. `jisikin/rag_docs.jsonl` 교체 (id, content, metadata.question, metadata.answer 형식)
+1. `data/rag_docs.jsonl` 교체 (id, content, metadata.question, metadata.answer 형식)
 2. 임베딩 재생성: `python jisikin/build_embeddings.py`
-3. pickle 캐시 삭제: `rm rag_cache.pkl` (다음 실행 시 자동 재생성)
+3. pickle 캐시 삭제: `rm data/rag_cache.pkl` (다음 실행 시 자동 재생성)

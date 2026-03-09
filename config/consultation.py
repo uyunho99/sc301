@@ -1,5 +1,5 @@
 """
-schema/consultation_config.py - 상담 Persona 설정
+config/consultation.py - 상담 Persona 설정
 
 톤/전략 레이어 (Flow 무관):
 4가지 Fit: desire, body, social, service

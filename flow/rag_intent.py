@@ -4,11 +4,40 @@ flow/rag_intent.py - RAGIntentMixin
 Hybrid RAG 의도 분류 + 컨텍스트 조합 + 검색 헬퍼.
 """
 from __future__ import annotations
+import functools
 import json
 import logging
+import os
 from typing import Any
 
+from .rag_postprocess import (
+    MIN_SIM_RAG,
+    MIN_SIM_FALLBACK,
+    MAX_CHARS_PER_DOC,
+    TOP_K,
+    NO_REFERENCE_FALLBACK,
+    OFFSCRIPT_FALLBACK,
+    format_rich_context,
+    build_source_map,
+    make_citation_instruction,
+)
+
 logger = logging.getLogger(__name__)
+
+
+# 시스템 프롬프트 로드 (sc301_system_prompt3.txt) — 첫 호출 시 1회만 로드
+@functools.lru_cache(maxsize=1)
+def _load_rich_system_prompt() -> str:
+    prompt_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "data", "sc301_system_prompt3.txt",
+    )
+    try:
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        logger.warning(f"시스템 프롬프트 파일 없음: {prompt_path}")
+        return ""
 
 
 class RAGIntentMixin:
@@ -31,6 +60,19 @@ class RAGIntentMixin:
 - 참고 정보에 없는 내용은 추측하지 마세요.
 - 답변은 2-3문장으로 간결하게 하세요.
 - 답변 후 반드시 현재 단계의 미수집 항목을 질문하세요."""
+
+    _OFFSCRIPT_TEMPLATE_RICH = """[고객 질문 응대]
+고객이 현재 단계와 무관한 시술 관련 질문을 했습니다.
+아래 참고 정보를 바탕으로 답변한 뒤, 현재 단계의 질문으로 자연스럽게 돌아가세요.
+
+{qa_context}
+
+[중요]
+- 참고 정보에 없는 내용은 추측하지 마세요.
+- 의학적 사실을 언급할 때는 문장 끝에 [n] 출처 표기를 붙이세요.
+- 답변은 3-5문장으로 정보 밀도를 높이되 간결하게 하세요.
+- 답변 후 반드시 현재 단계의 미수집 항목을 질문하세요.
+- 안내드린 내용은 일반 정보이며, 정확한 평가는 의료진 상담이 필요합니다."""
 
     _NO_PERSONA_TEMPLATE = """당신은 성형외과 상담 도우미입니다.
 고객이 시술 관련 질문을 했습니다. 아래 참고 정보를 바탕으로 친절하게 답변하세요.
@@ -195,33 +237,120 @@ class RAGIntentMixin:
         graph_rag_context: str,
         qa_context: str,
         qa_score: float,
+        qa_results: list | None = None,
     ) -> str:
-        """의도에 따라 GraphRAG + QA 컨텍스트 조합."""
+        """의도에 따라 GraphRAG + QA 컨텍스트 조합.
+
+        qa_results가 있으면 메타데이터 포함 리치 포맷으로 QA 컨텍스트를 생성.
+        없으면 기존 qa_context(answer-only 텍스트)를 사용.
+        """
         parts = []
+
+        def _qa_rich_text(max_docs: int, max_chars: int) -> str:
+            """qa_results가 있으면 리치 포맷, 없으면 기존 텍스트."""
+            if qa_results:
+                top = [r for r in qa_results if r.score >= 0.45][:max_docs]
+                if top:
+                    return format_rich_context(top, max_chars=max_chars)
+            return (qa_context or "")[:max_chars * max_docs]
 
         if intent == "slot_data":
             if graph_rag_context:
                 parts.append(graph_rag_context)
-            if qa_context and qa_score > 0.45:
-                parts.append(f"[일반 시술 정보]\n{qa_context[:400]}")
+            if qa_score > 0.45:
+                rich = _qa_rich_text(max_docs=2, max_chars=350)
+                if rich:
+                    parts.append(f"[일반 시술 정보]\n{rich}")
 
         elif intent == "general_question":
-            if qa_context:
-                parts.append(f"[관련 Q&A]\n{qa_context[:600]}")
+            rich = _qa_rich_text(max_docs=3, max_chars=400)
+            if rich:
+                parts.append(f"[관련 Q&A]\n{rich}")
             if graph_rag_context:
                 parts.append(graph_rag_context[:300])
 
         elif intent == "mixed":
             if graph_rag_context:
                 parts.append(graph_rag_context)
-            if qa_context:
-                parts.append(f"[일반 시술 정보]\n{qa_context[:400]}")
+            if qa_score > 0.45:
+                rich = _qa_rich_text(max_docs=2, max_chars=350)
+                if rich:
+                    parts.append(f"[일반 시술 정보]\n{rich}")
 
         else:
             if graph_rag_context:
                 parts.append(graph_rag_context)
 
         return "\n\n".join(parts) if parts else ""
+
+    # =========================================================================
+    # 리치 검색 + 이중 임계값 결정 (Case 2/3)
+    # =========================================================================
+
+    def _do_qa_search_rich(
+        self, core: Any, user_text: str, k: int = TOP_K, min_score: float = MIN_SIM_FALLBACK,
+    ) -> list:
+        """QASearchResult 리스트를 반환하는 리치 검색."""
+        if not core or not hasattr(core, "qa_search"):
+            return []
+        try:
+            return core.qa_search(user_text, k=k, min_score=min_score)
+        except Exception as e:
+            logger.warning(f"QA 리치 검색 실패: {e}")
+            return []
+
+    @staticmethod
+    def _collapse_qa_results(results: list, max_length: int = 800) -> tuple[str, float]:
+        """QASearchResult 리스트를 기존 (text, top_score) 형식으로 변환."""
+        if not results:
+            return "", 0.0
+        top_score = results[0].score
+        parts: list[str] = []
+        length = 0
+        for r in results:
+            text = r.entry.answer
+            if not text:
+                continue
+            if length + len(text) > max_length:
+                break
+            parts.append(text)
+            length += len(text)
+        return "\n".join(parts), top_score
+
+    def _build_general_rag_response_context(
+        self, core: Any, user_text: str,
+    ) -> tuple[str, str | None, dict[int, str]]:
+        """Case 2 전용: 이중 임계값 기반 RAG 결정 로직.
+
+        Returns:
+            (mode, system_prompt, source_map)
+            mode: "rag" | "no_rag" | "no_reference_fallback"
+        """
+        results = self._do_qa_search_rich(core, user_text, k=TOP_K, min_score=MIN_SIM_FALLBACK)
+
+        if not results:
+            return "no_reference_fallback", None, {}
+
+        top_score = results[0].score
+
+        # no_rag: 0.35 ≤ top_score < 0.50
+        if top_score < MIN_SIM_RAG:
+            prompt = _load_rich_system_prompt() or self._NO_PERSONA_TEMPLATE.format(qa_context="")
+            return "no_rag", prompt, {}
+
+        # rag: top_score ≥ 0.50
+        rag_accepted = [r for r in results if r.score >= MIN_SIM_RAG]
+        context_text = format_rich_context(rag_accepted)
+        source_map = build_source_map(rag_accepted)
+
+        base_prompt = _load_rich_system_prompt() or self._NO_PERSONA_TEMPLATE.format(qa_context="")
+        rag_section = "아래는 검색된 참고 문서입니다.\n" + context_text
+
+        full_prompt = base_prompt + "\n\n" + rag_section
+        if source_map:
+            full_prompt += "\n\n" + make_citation_instruction(source_map)
+
+        return "rag", full_prompt, source_map
 
     # =========================================================================
     # 검색 헬퍼 (Hybrid RAG)

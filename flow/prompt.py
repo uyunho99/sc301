@@ -10,7 +10,6 @@ from typing import Any
 try:
     from ..state import ConversationState
     from ..schema import (
-        AUTO_COMPUTABLE_SLOTS,
         SYSTEM_MANAGED_SLOTS,
         CHECKITEM_HINTS,
         CONSULTATION_TONE_STRATEGIES,
@@ -18,13 +17,13 @@ try:
 except ImportError:
     from state import ConversationState
     from schema import (
-        AUTO_COMPUTABLE_SLOTS,
         SYSTEM_MANAGED_SLOTS,
         CHECKITEM_HINTS,
         CONSULTATION_TONE_STRATEGIES,
     )
 
 from ._types import StepInfo
+from ._helpers import iter_pending_checks
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +62,15 @@ class PromptMixin:
                 parts.append(f"절대 금기 표현: {', '.join(tone['taboo'])}")
 
         return "\n".join(parts)
+
+    def _get_missing_items(self, step: StepInfo, state: ConversationState) -> list[str]:
+        """미수집 CheckItem을 '- label (hint)' 형식 리스트로 반환."""
+        missing = []
+        for var_name, ci in iter_pending_checks(step.check_items, state, self):
+            label = ci.get("name", var_name)
+            hint = CHECKITEM_HINTS.get(var_name, "")
+            missing.append(f"- {label}" + (f" ({hint})" if hint else ""))
+        return missing
 
     def build_step_prompt(
         self,
@@ -110,21 +118,7 @@ class PromptMixin:
         rag_context: str
     ) -> str:
         context = self._build_persona_context(state)
-
-        missing = []
-        for ci in step.check_items:
-            var_name = ci.get("variableName") or ci.get("name") or ci.get("id")
-            if not var_name:
-                continue
-            if state.is_slot_filled(var_name):
-                continue
-            if self.should_skip_check_item(var_name, state):
-                continue
-            if var_name in AUTO_COMPUTABLE_SLOTS:
-                continue
-            label = ci.get("name", var_name)
-            hint = CHECKITEM_HINTS.get(var_name, "")
-            missing.append(f"- {label}" + (f" ({hint})" if hint else ""))
+        missing = self._get_missing_items(step, state)
 
         if not missing:
             return f"{context}\n모든 정보 수집 완료. 다음 단계 안내."
@@ -204,20 +198,7 @@ class PromptMixin:
         filled = state.get_filled_slots()
         display_filled = {k: v for k, v in filled.items() if k not in SYSTEM_MANAGED_SLOTS}
 
-        missing = []
-        for ci in step.check_items:
-            var_name = ci.get("variableName") or ci.get("name") or ci.get("id")
-            if not var_name:
-                continue
-            if state.is_slot_filled(var_name):
-                continue
-            if self.should_skip_check_item(var_name, state):
-                continue
-            if var_name in AUTO_COMPUTABLE_SLOTS:
-                continue
-            label = ci.get("name", var_name)
-            hint = CHECKITEM_HINTS.get(var_name, "")
-            missing.append(f"- {label}" + (f" ({hint})" if hint else ""))
+        missing = self._get_missing_items(step, state)
 
         items = "\n".join([f"- {k}: {v}" for k, v in display_filled.items()])
 
@@ -275,20 +256,7 @@ class PromptMixin:
         filled = state.get_filled_slots()
         display_filled = {k: v for k, v in filled.items() if k not in SYSTEM_MANAGED_SLOTS}
 
-        missing = []
-        for ci in step.check_items:
-            var_name = ci.get("variableName") or ci.get("name") or ci.get("id")
-            if not var_name:
-                continue
-            if state.is_slot_filled(var_name):
-                continue
-            if self.should_skip_check_item(var_name, state):
-                continue
-            if var_name in AUTO_COMPUTABLE_SLOTS:
-                continue
-            label = ci.get("name", var_name)
-            hint = CHECKITEM_HINTS.get(var_name, "")
-            missing.append(f"- {label}" + (f" ({hint})" if hint else ""))
+        missing = self._get_missing_items(step, state)
 
         items = "\n".join([f"- {k}: {v}" for k, v in display_filled.items()])
 

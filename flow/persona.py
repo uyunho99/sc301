@@ -37,8 +37,8 @@ class PersonaMixin:
 
         with self.driver.session() as session:
             result = session.run(QUERY_ALL_PERSONAS)
-            self._all_personas_cache = [dict(r) for r in result]
             self._set_cache_timestamp(cache_key)
+            self._all_personas_cache = [dict(r) for r in result]
             return self._all_personas_cache
 
     def get_persona(self, persona_id: str) -> dict | None:
@@ -50,8 +50,8 @@ class PersonaMixin:
             result = session.run(QUERY_PERSONA_BY_ID, personaId=persona_id)
             record = result.single()
             if record:
-                self._persona_cache[persona_id] = dict(record)
                 self._set_cache_timestamp(cache_key)
+                self._persona_cache[persona_id] = dict(record)
                 return self._persona_cache[persona_id]
             return None
 
@@ -64,8 +64,8 @@ class PersonaMixin:
             result = session.run(QUERY_SCENARIO_BY_ID, scenarioId=scenario_id)
             record = result.single()
             if record:
-                self._scenario_cache[scenario_id] = dict(record)
                 self._set_cache_timestamp(cache_key)
+                self._scenario_cache[scenario_id] = dict(record)
                 return self._scenario_cache[scenario_id]
             return None
 

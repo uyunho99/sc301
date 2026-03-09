@@ -45,6 +45,7 @@ except ImportError:
     )
 
 from ._types import StepInfo, TransitionResult, STALE_STEP_THRESHOLD
+from ._helpers import get_check_var_name, iter_pending_checks
 
 logger = logging.getLogger(__name__)
 
@@ -86,8 +87,8 @@ class NavigationMixin:
                 programs=programs,
                 reference_slots=ref_slots,
             )
-            self._step_cache[step_id] = step_info
             self._set_cache_timestamp(cache_key)
+            self._step_cache[step_id] = step_info
             return step_info
 
     def _infer_step_type(self, step_id: str) -> str:
@@ -121,8 +122,8 @@ class NavigationMixin:
         with self.driver.session() as session:
             result = session.run(QUERY_STEP_CHECKS, stepId=step_id)
             checks = [dict(r) for r in result]
-            self._step_checks_cache[step_id] = checks
             self._set_cache_timestamp(cache_key)
+            self._step_checks_cache[step_id] = checks
             return checks
 
     def get_scenario_all_checks(self, scenario_id: str) -> list[dict]:
@@ -134,8 +135,8 @@ class NavigationMixin:
         with self.driver.session() as session:
             result = session.run(QUERY_SCENARIO_ALL_CHECKS, scenarioId=scenario_id)
             checks = [dict(r) for r in result]
-            self._step_checks_cache[scenario_id] = checks
             self._set_cache_timestamp(cache_key)
+            self._step_checks_cache[scenario_id] = checks
             return checks
 
     # =========================================================================
@@ -261,16 +262,7 @@ class NavigationMixin:
             return
 
         checks = self.get_step_checks(step_id)
-        for ci in (checks or []):
-            vn = ci.get("variableName") or ci.get("name") or ci.get("id")
-            if not vn:
-                continue
-            if state.is_slot_filled(vn):
-                continue
-            if self.should_skip_check_item(vn, state):
-                continue
-            if vn in AUTO_COMPUTABLE_SLOTS:
-                continue
+        for vn, ci in iter_pending_checks(checks or [], state, self):
             state.set_slot(vn, "미응답")
             logger.info(f"Stale step 복구: {vn} = '미응답' (step={step_id})")
 
@@ -281,7 +273,7 @@ class NavigationMixin:
             return True
 
         for ci in checks:
-            var_name = ci.get("variableName") or ci.get("name") or ci.get("id")
+            var_name = get_check_var_name(ci)
             if not var_name:
                 continue
             if state.is_slot_filled(var_name):

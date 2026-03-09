@@ -1,5 +1,5 @@
 """
-schema/guide_rules.py - Guide 선택 규칙
+config/guides.py - Guide 선택 규칙
 
 Step에 여러 Guide가 연결된 경우, 현재 상태(protocolMode 등)에 따라
 적절한 Guide를 선택하기 위한 매핑.

@@ -14,7 +14,7 @@ import os
 import json
 import pickle
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 import faiss
@@ -29,6 +29,10 @@ class JisikinEntry:
     content: str         # "질문: ...\n답변: ..."
     question: str        # metadata.question
     answer: str          # metadata.answer
+    date: str = ""                                   # metadata.date
+    link: str = ""                                   # metadata.link
+    category: str = ""                               # metadata.category
+    a_tags: list[str] = field(default_factory=list)  # metadata.a_tags
 
 
 @dataclass
@@ -88,6 +92,10 @@ class QAVectorStore:
                     content=doc.get("content", ""),
                     question=meta.get("question", ""),
                     answer=meta.get("answer", ""),
+                    date=meta.get("date", ""),
+                    link=meta.get("link", ""),
+                    category=meta.get("category", ""),
+                    a_tags=meta.get("a_tags", []),
                 )
                 self.entries.append(entry)
 
@@ -163,6 +171,12 @@ class QAVectorStore:
 
             self.entries = data["entries"]
 
+            # 캐시된 JisikinEntry에 새 필드가 없으면 무효 처리
+            if self.entries and not hasattr(self.entries[0], "link"):
+                logger.warning("캐시 스키마 불일치 (메타데이터 필드 누락). 재빌드 필요.")
+                self.entries = []
+                return False
+
             # FAISS 인덱스 역직렬화
             index_bytes = data["faiss_index"]
             self._index = faiss.deserialize_index(
@@ -173,7 +187,7 @@ class QAVectorStore:
             logger.info(f"Q&A FAISS 캐시 로드 완료: {len(self.entries)}건 ({cache_path})")
             return True
         except Exception as e:
-            logger.warning(f"Q&A 캐시 로드 실패: {e}")
+            logger.warning(f"Q&A 캐시 로드 실패 (재빌드 필요): {e}")
             return False
 
     def save_cache(self, cache_path: str) -> None:

@@ -1,7 +1,7 @@
 # SC301 Graph RAG Chatbot - Code Specification
 
 > **Date:** 2026-03-07
-> **Version:** v5 (Hybrid RAG: jisikin QA 스토어, flow/schema 패키지 분리, intent 분류)
+> **Version:** v5 (Hybrid RAG, config/schema 분리, factories.py 추출)
 
 ---
 
@@ -12,7 +12,7 @@ SC301은 **Hybrid RAG 기반 성형외과 상담 챗봇**으로, Neo4j 그래프
 ### 핵심 설계 원칙
 
 - **Graph-Driven Flow**: 대화 흐름이 하드코딩이 아닌 Neo4j 그래프의 Step → Step 관계로 정의됨
-- **Hybrid RAG**: GraphRAG(Neo4j 벡터 검색) + QA 벡터 스토어(jisikin 165K 문서)를 의도 분류 기반으로 결합
+- **Hybrid RAG**: GraphRAG(Neo4j 벡터 검색) + QA 벡터 스토어(data/ 165K 문서)를 의도 분류 기반으로 결합
 - **Slot-Based State Management**: 각 Step에서 수집해야 할 정보(CheckItem)를 slot으로 관리, 모두 수집 시 다음 Step으로 전이
 - **LLM-Powered Extraction + Generation**: OpenAI LLM이 사용자 발화에서 slot 값을 추출하고, 상황에 맞는 응답을 생성
 - **Static Routing Table**: 분기 로직은 DB의 Transition/DecisionRule 노드 대신 Python dict(`BRANCHING_RULES`)로 관리하여 성능과 디버깅 편의성 확보
@@ -37,10 +37,10 @@ SC301은 **Hybrid RAG 기반 성형외과 상담 챗봇**으로, Neo4j 그래프
 |  - prompt.py: Step 유형별 시스템 프롬프트 빌더                 |
 |  - turn.py: process_turn (동기/스트리밍/비동기) 오케스트레이션  |
 +-------------------------------------------------------------+
-|  RAG Layer (rag_store.py)                                     |
-|  - QAVectorStore: jisikin JSONL+NPZ 인메모리 벡터 스토어       |
-|  - 코사인 유사도 검색 (numpy)                                 |
-|  - pickle 캐시 (rag_cache.pkl)                                |
+|  RAG Layer (rag/store.py)                                     |
+|  - QAVectorStore: FAISS 기반 인메모리 벡터 스토어              |
+|  - FAISS IndexFlatIP 벡터 검색                                |
+|  - pickle 캐시 (data/rag_cache.pkl)                           |
 +-------------------------------------------------------------+
 |  State Layer (state.py)                                       |
 |  - ConversationState: 세션 상태 데이터 클래스                  |
@@ -55,17 +55,19 @@ SC301은 **Hybrid RAG 기반 성형외과 상담 챗봇**으로, Neo4j 그래프
 |  - Q&A 벡터 스토어 초기화 + 검색 (init_qa_store / qa_search)  |
 |  - TTL Ingestion (RDF -> Neo4j 노드/관계)                     |
 +-------------------------------------------------------------+
+|  Config Layer (config/ 패키지)                                |
+|  - branching.py: 정적 라우팅 테이블 (BRANCHING_RULES 등)      |
+|  - slots.py: CheckItem 힌트, 자동 계산, 조건부 스킵            |
+|  - consultation.py: 상담 키워드/톤/전략 데이터                  |
+|  - guides.py: Guide 선택 규칙                                  |
+|  - conditions.py: RULE_CONDITION_MAP, OR_LOGIC_RULES          |
++-------------------------------------------------------------+
 |  Schema Layer (schema/ 패키지)                                |
 |  - queries.py: Cypher 쿼리 상수 65+ 개                        |
-|  - branching_rules.py: 정적 라우팅 테이블 (BRANCHING_RULES 등) |
-|  - slot_rules.py: CheckItem 힌트, 자동 계산, 조건부 스킵       |
-|  - consultation_config.py: 상담 키워드/톤/전략 데이터           |
-|  - guide_rules.py: Guide 선택 규칙                             |
-|  - rule_conditions.py: RULE_CONDITION_MAP, OR_LOGIC_RULES     |
 |  - ingestion.py: TTL Ingestion 관련 Cypher 쿼리               |
 +-------------------------------------------------------------+
      |                    |                    |
-  Neo4j DB           OpenAI API        jisikin/ (JSONL+NPZ)
+  Neo4j DB           OpenAI API        data/ (JSONL+NPZ)
 (그래프 온톨로지)    (임베딩/채팅)      (165K Q&A 벡터 스토어)
 ```
 
@@ -99,7 +101,7 @@ User Input
 |    |   Surgery + Step 벡터 검색                                |
 |    |                                                          |
 |    +-- core.qa_search(text)  [QA 검색]                        |
-|        jisikin Q&A 벡터 스토어 검색 (165K 문서)                |
+|        data/ Q&A 벡터 스토어 검색 (165K 문서)                |
 +--------------------------------------------------------------+
 | 3.5. flow.auto_compute_slots(state)                           |
 |      bmi, regionBucket 등 파생 슬롯 자동 계산                  |
@@ -212,13 +214,13 @@ CheckItem 수집 완료 확인
 
 ### 2.3. Hybrid RAG 의도 분류 워크플로우
 
-Hybrid RAG는 GraphRAG(Neo4j)와 QA 벡터 스토어(jisikin/)를 의도 기반으로 결합한다.
+Hybrid RAG는 GraphRAG(Neo4j)와 QA 벡터 스토어(data/)를 의도 기반으로 결합한다.
 
 ```
 사용자 발화
     |
     +-- [병렬] GraphRAG 검색 (Neo4j 벡터 인덱스)
-    +-- [병렬] QA 검색 (jisikin/ 165K 문서, 코사인 유사도)
+    +-- [병렬] QA 검색 (data/ 165K 문서, FAISS)
     |
     v
 _classify_user_intent(user_text, extracted_slot_count, qa_top_score)
@@ -291,11 +293,14 @@ consultation_scoring_mode 확인
         |           |
         v           v
    +------------------+
-   |    schema/        |  <- Cypher 쿼리 + 정적 라우팅 테이블
-   +------------------+      + 상담 키워드/톤 전략
+   |    schema/        |  <- Cypher 쿼리
+   +------------------+
+   +------------------+
+   |    config/        |  <- 정적 라우팅 테이블 + 상담 키워드/톤 전략
+   +------------------+
 
    +------------------+
-   |  rag_store.py    |  <- Q&A 벡터 스토어 (core.py에서 사용)
+   |  rag/store.py    |  <- Q&A 벡터 스토어 (core.py에서 사용)
    +------------------+
 
 독립 스크립트:
@@ -307,7 +312,7 @@ consultation_scoring_mode 확인
 External:
   - OpenAI API (core.py -> embedding/chat, flow/ -> slot추출/응답)
   - Neo4j DB (core.py -> 연결관리, flow/ -> 쿼리 실행)
-  - jisikin/ (JSONL+NPZ -> rag_store.py -> core.py)
+  - data/ (JSONL+NPZ -> rag/store.py -> core.py)
 ```
 
 ---
@@ -322,7 +327,9 @@ sc301/
 +-- cli.py                   # CLI 진입점 (8개 서브커맨드)
 +-- core.py                  # Core: OpenAI + Neo4j + Embedding + Vector Search + QA Store
 +-- state.py                 # ConversationState + Storage (File/Redis)
-+-- rag_store.py             # QAVectorStore: jisikin JSONL+NPZ 인메모리 벡터 스토어
++-- rag/
+|   +-- __init__.py          # QAVectorStore, QASearchResult export
+|   +-- store.py             # QAVectorStore: FAISS 기반 인메모리 벡터 스토어
 |
 |  -- flow/ 패키지 (비즈니스 로직) --
 +-- flow/
@@ -337,23 +344,31 @@ sc301/
 |   +-- prompt.py            # PromptMixin: Step 유형별 프롬프트 생성
 |   +-- turn.py              # TurnMixin: process_turn 오케스트레이션
 |
-|  -- schema/ 패키지 (Neo4j 스키마 + 비즈니스 룰) --
+|  -- config/ 패키지 (비즈니스 룰 설정) --
++-- config/
+|   +-- __init__.py          # 하위 호환: from config import X 유지
+|   +-- branching.py         # BRANCHING_RULES 정적 라우팅 테이블
+|   +-- conditions.py        # RULE_CONDITION_MAP, OR_LOGIC_RULES
+|   +-- guides.py            # GUIDE_SELECTION_RULES
+|   +-- slots.py             # AUTO_COMPUTABLE_SLOTS, CONDITIONAL_SKIP_RULES, CHECKITEM_HINTS 등
+|   +-- consultation.py      # 상담 키워드/톤/전략 데이터
+|
+|  -- schema/ 패키지 (Neo4j 스키마) --
 +-- schema/
 |   +-- __init__.py          # 하위 호환: from schema import X 유지
 |   +-- queries.py           # Cypher 쿼리 상수 (Flow 조회, 벡터 검색 등)
 |   +-- ingestion.py         # TTL Ingestion Cypher (노드 Merge, 관계 생성, 임베딩)
-|   +-- branching_rules.py   # BRANCHING_RULES 정적 라우팅 테이블
-|   +-- rule_conditions.py   # RULE_CONDITION_MAP, OR_LOGIC_RULES
-|   +-- guide_rules.py       # GUIDE_SELECTION_RULES
-|   +-- slot_rules.py        # AUTO_COMPUTABLE_SLOTS, CONDITIONAL_SKIP_RULES, CHECKITEM_HINTS 등
-|   +-- consultation_config.py # 상담 키워드/톤/전략 데이터
 |
-|  -- jisikin/ (Q&A 벡터 스토어 데이터) --
-+-- jisikin/
+|  -- data/ (RAG 데이터, gitignore) --
++-- data/
 |   +-- rag_docs.jsonl       # 165,009건 Q&A 문서 (네이버 지식인)
 |   +-- rag_docs.embeddings.npz  # 사전 계산 임베딩 (text-embedding-3-small, 1536d)
+|   +-- rag_cache.pkl        # pickle 캐시
+|   +-- sc301_system_prompt3.txt  # 시스템 프롬프트
+|
+|  -- jisikin/ (개발 참고용) --
++-- jisikin/
 |   +-- build_embeddings.py  # 임베딩 재생성 스크립트 (OpenAI API)
-|   +-- rag_docs.json        # 원본 JSON (참고용)
 |
 |  -- 그래프 유지보수 --
 +-- patch_graph.py           # Neo4j 그래프 패치 스크립트 (3 패치셋)
@@ -378,34 +393,33 @@ sc301/
 +-- backups/                 # Neo4j 데이터 내보내기 파일 저장
 |
 |  -- 문서 --
-+-- CODE_SPECIFICATION.md    # 코드 아키텍처 명세 (본 문서)
-+-- SETUP_GUIDE.md           # 환경 설정 가이드
++-- README.md                # 프로젝트 개요 (GitHub 랜딩 페이지)
 +-- GRAPH_RAG_SPEC.md        # Graph RAG 전체 스펙 문서
-+-- DEPLOYMENT_GUIDE.md      # 배포 가이드
-+-- SERVER_GUIDE.md          # 서버 운영 가이드
-+-- TEST_SCENARIOS_GUIDE.md  # 테스트 시나리오 가이드
-+-- REPL_SCENARIOS_DETAIL.md # REPL 시나리오 상세
++-- docs/
+|   +-- ARCHITECTURE.md      # 코드 아키텍처 명세 (본 문서)
+|   +-- SETUP.md             # 환경 설정 가이드
+|   +-- TESTING.md           # 테스트 시나리오 가이드
 ```
 
 ---
 
 ## 5. File-by-File Specification
 
-### 5.1. `schema/` — Neo4j 스키마 & 비즈니스 룰 패키지
+### 5.1. `schema/` + `config/` — Neo4j 스키마 & 비즈니스 룰 패키지
 
-> 기존 `schema.py` 단일 파일을 7개 모듈로 분리. `from schema import X` 하위 호환 유지.
+> 기존 `schema.py` 단일 파일을 schema/(Cypher 쿼리)와 config/(비즈니스 룰)로 분리. `from schema import X`, `from config import X` 하위 호환 유지.
 
 #### 모듈 구성
 
 | 모듈 | 주요 상수 | 설명 |
 |------|-----------|------|
-| `queries.py` | `QUERY_ALL_PERSONAS`, `QUERY_VECTOR_SEARCH_*` 등 | Cypher 쿼리 상수 (Flow 조회 13종, 벡터 검색 2종) |
-| `ingestion.py` | `SCHEMA_QUERIES`, `VECTOR_INDEX_QUERIES`, `QUERY_MERGE_*`, `QUERY_CREATE_REL_*` | 스키마 생성, 노드 Merge 14종, 관계 생성 18종, 임베딩 업데이트 |
-| `branching_rules.py` | `BRANCHING_RULES` | 5개 분기점 × 총 16개 규칙 |
-| `rule_conditions.py` | `RULE_CONDITION_MAP`, `OR_LOGIC_RULES` | DecisionRule → Condition 매핑, OR 로직 규칙 |
-| `guide_rules.py` | `GUIDE_SELECTION_RULES` | 9개 Step × protocolMode → Guide ID 매핑 |
-| `slot_rules.py` | `AUTO_COMPUTABLE_SLOTS`, `CONDITIONAL_SKIP_RULES`, `SYSTEM_MANAGED_SLOTS`, `CHECKITEM_HINTS`, `REGION_BUCKET_MAP` | 슬롯 자동 계산, 조건부 스킵, 힌트 50+항목 |
-| `consultation_config.py` | `CONSULTATION_KEYWORDS`, `CONSULTATION_TONE_STRATEGIES` 등 | 상담 Persona 4차원 키워드/톤/전략 데이터 |
+| `schema/queries.py` | `QUERY_ALL_PERSONAS`, `QUERY_VECTOR_SEARCH_*` 등 | Cypher 쿼리 상수 (Flow 조회 13종, 벡터 검색 2종) |
+| `schema/ingestion.py` | `SCHEMA_QUERIES`, `VECTOR_INDEX_QUERIES`, `QUERY_MERGE_*`, `QUERY_CREATE_REL_*` | 스키마 생성, 노드 Merge 14종, 관계 생성 18종, 임베딩 업데이트 |
+| `config/branching.py` | `BRANCHING_RULES` | 5개 분기점 × 총 16개 규칙 |
+| `config/conditions.py` | `RULE_CONDITION_MAP`, `OR_LOGIC_RULES` | DecisionRule → Condition 매핑, OR 로직 규칙 |
+| `config/guides.py` | `GUIDE_SELECTION_RULES` | 9개 Step × protocolMode → Guide ID 매핑 |
+| `config/slots.py` | `AUTO_COMPUTABLE_SLOTS`, `CONDITIONAL_SKIP_RULES`, `SYSTEM_MANAGED_SLOTS`, `CHECKITEM_HINTS`, `REGION_BUCKET_MAP` | 슬롯 자동 계산, 조건부 스킵, 힌트 50+항목 |
+| `config/consultation.py` | `CONSULTATION_KEYWORDS`, `CONSULTATION_TONE_STRATEGIES` 등 | 상담 Persona 4차원 키워드/톤/전략 데이터 |
 
 #### 정적 라우팅 테이블
 
@@ -547,7 +561,7 @@ sc301/
 | | `vector_search_combined` | `(question, k=2, min_score=0.5) -> list[Chunk]` | Surgery + Step 동시 검색, 점수 정렬, 중복 제거, 상위 k*2개 반환 |
 | | `vector_search_async` | `async (question, k, search_type, min_score) -> list[Chunk]` | 비동기 벡터 검색 (asyncio.to_thread 래핑) |
 | | `vector_search_combined_async` | `async (question, k, min_score) -> list[Chunk]` | Surgery + Step 비동기 병렬 검색 (asyncio.gather) |
-| **Q&A 벡터 스토어** | `init_qa_store` | `(docs_dir=None, cache_path=None) -> None` | jisikin/ JSONL+NPZ 로드. pickle 캐시 우선 (rag_cache.pkl) |
+| **Q&A 벡터 스토어** | `init_qa_store` | `(docs_dir=None, cache_path=None) -> None` | data/ JSONL+NPZ 로드. pickle 캐시 우선 (data/rag_cache.pkl) |
 | | `qa_search` | `(query, k=3, min_score=0.45) -> list[QASearchResult]` | Q&A 벡터 검색. Core.embed() 캐시 활용 |
 | **스키마** | `ensure_schema` | `() -> None` | Neo4j constraints + vector index 생성 |
 | **TTL Ingestion** | `ingest_documents` | `(ttl_path: str, create_embeddings=True) -> dict` | TTL 파싱 → 노드/관계 생성 + 임베딩. 처리 통계 반환 |
@@ -561,9 +575,9 @@ sc301/
 
 ---
 
-### 5.4. `rag_store.py` — Q&A 벡터 스토어
+### 5.4. `rag/store.py` — Q&A 벡터 스토어
 
-> jisikin/ JSONL+NPZ 기반 인메모리 벡터 스토어. Hybrid RAG의 QA 검색 담당.
+> data/ JSONL+NPZ 기반 FAISS 인메모리 벡터 스토어. Hybrid RAG의 QA 검색 담당.
 
 #### 데이터 클래스
 
@@ -597,7 +611,7 @@ sc301/
 #### 로드 흐름
 
 ```
-1. pickle 캐시 (rag_cache.pkl) 시도 -> 성공 시 완료
+1. pickle 캐시 (data/rag_cache.pkl) 시도 -> 성공 시 완료
 2. JSONL (rag_docs.jsonl) + NPZ (rag_docs.embeddings.npz) 로드
    -> pickle 캐시 저장 -> 완료
 3. NPZ 로드 실패 시 -> JSONL만 로드 (검색 불가, 경고 메시지)
@@ -1015,14 +1029,14 @@ __all__ = ["ConversationState", "Core", "FlowEngine", "__version__"]
 |------|------|------|
 | 1. 메모리 캐싱 | flow/engine.py | Step, Persona, Scenario, CheckItem, Condition 캐시 (TTL 5분) |
 | 2. 임베딩 캐싱 | core.py | MD5 해시 기반 LRU 캐시 (최대 1000개) |
-| 3. Q&A pickle 캐싱 | rag_store.py | 165K 문서+임베딩 pickle 캐시 (두 번째 로드부터 고속) |
+| 3. Q&A pickle 캐싱 | rag/store.py | 165K 문서+임베딩 pickle 캐시 (두 번째 로드부터 고속) |
 | 4. 비동기 처리 | core.py, flow/turn.py | AsyncOpenAI, asyncio.to_thread, asyncio.gather |
 | 5. Neo4j 연결 풀 | core.py | 최대 50개 연결, keep_alive, 타임아웃 설정 |
 | 6. LLM 스트리밍 | flow/turn.py | SSE 스트리밍 응답 (REPL 실시간 출력) |
 | 7. Vector Search 최적화 | core.py | min_score 필터링, Surgery+Step 합산 정렬, 중복 제거 |
 | 8. 프롬프트 최적화 | flow/prompt.py | 히스토리 6턴 제한, 가이드 500자 제한 |
 | 9. Hybrid RAG 의도 분류 | flow/rag_intent.py | rule 우선 + LLM fallback으로 불필요한 API 호출 최소화 |
-| 10. numpy 코사인 유사도 | rag_store.py | 행렬 연산으로 165K 문서 대상 밀리초 단위 검색 |
+| 10. FAISS 벡터 검색 | rag/store.py | FAISS IndexFlatIP로 165K 문서 대상 밀리초 단위 검색 |
 | 11. LLM 호출 제거 | flow/persona.py | Persona 판별을 키워드+복합신호 기반으로 (LLM 미사용) |
 | 12. 병렬 실행 | flow/turn.py | ThreadPoolExecutor로 slot 추출 + GraphRAG + QA 검색 3-way 동시 |
 | 13. 자동 계산 | flow/slots.py | BMI, regionBucket 파생 슬롯 자동 산출 |
@@ -1066,7 +1080,7 @@ REDIS_URL=redis://localhost:6379                  # redis 백엔드 시 필요
 +-- CLI (cli.py) -------------------------------------------+
 |  cmd_repl() / cmd_turn()                                   |
 |  -> FileStateStorage.load() -> state                       |
-|  -> core.init_qa_store()  (jisikin/ Q&A 벡터 스토어 로드)  |
+|  -> core.init_qa_store()  (data/ Q&A 벡터 스토어 로드)    |
 |  -> FlowEngine.process_turn()                              |
 |     |                                                      |
 |     +-->  resolve_persona_scenario()                       |
@@ -1083,7 +1097,7 @@ REDIS_URL=redis://localhost:6379                  # redis 백엔드 시 필요
 |     |     |                                                |
 |     |     +-->  _do_qa_search()                            |
 |     |           +-->  OpenAI: embed() (캐시)               |
-|     |           +-->  rag_store: numpy 코사인 유사도       |
+|     |           +-->  rag/store: FAISS 벡터 검색            |
 |     |                                                      |
 |     +-->  auto_compute_slots() (로컬 계산)                 |
 |     +-->  score_consultation_persona()                     |

@@ -32,6 +32,8 @@ except ImportError:
         BRANCHING_RULES,
     )
 
+from ._helpers import get_check_var_name
+
 logger = logging.getLogger(__name__)
 
 
@@ -185,7 +187,7 @@ class SlotMixin:
 
     def _build_variable_desc(self, ci: dict, state: ConversationState) -> str | None:
         """CheckItem을 추출 프롬프트용 설명 문자열로 변환."""
-        var_name = ci.get("variableName") or ci.get("name") or ci.get("id")
+        var_name = get_check_var_name(ci)
         if not var_name:
             return None
 
@@ -229,7 +231,7 @@ class SlotMixin:
 
         current_var_names = set()
         for ci in check_items:
-            vn = ci.get("variableName") or ci.get("name") or ci.get("id")
+            vn = get_check_var_name(ci)
             if vn:
                 current_var_names.add(vn)
 
@@ -243,7 +245,7 @@ class SlotMixin:
                 for ci in next_checks:
                     ci_id = ci.get("id")
                     if ci_id and ci_id not in current_ids:
-                        vn = ci.get("variableName") or ci.get("name") or ci_id
+                        vn = get_check_var_name(ci) or ci_id
                         if not state.is_slot_filled(vn):
                             prefetch_var_names.add(vn)
                             check_items.append(ci)
@@ -257,7 +259,7 @@ class SlotMixin:
         for ci in check_items:
             desc = self._build_variable_desc(ci, state)
             if desc:
-                var_name = ci.get("variableName") or ci.get("name") or ci.get("id")
+                var_name = get_check_var_name(ci)
                 variables.append(desc)
                 valid_var_names.add(var_name)
 

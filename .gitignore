@@ -40,6 +40,8 @@ SERVER_GUIDE.md
 benchmark_analysis.md
 benchmark_analysis_v2.md
 
-# RAG
+# RAG data (large files)
+data/
+!data/sc301_system_prompt3.txt
 jisikin/
 *.pkl

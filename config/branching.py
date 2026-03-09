@@ -1,5 +1,5 @@
 """
-schema/branching_rules.py - 분기 규칙 매핑
+config/branching.py - 분기 규칙 매핑
 
 실제 DB에서 Transition이 Step에 HAS_TRANSITION으로 연결되지 않으므로,
 분기가 필요한 Step과 Transition/Rule을 매핑하는 정적 라우팅 테이블.

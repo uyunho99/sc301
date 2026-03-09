@@ -1,5 +1,7 @@
 # SC301 테스트 시나리오 전체 가이드
 
+> 마지막 검증: 2026-02-21 — Graph CHECKS 관계와 100% 정합성 확인 완료
+
 ## 파일 구조 및 의존 관계
 
 ```
@@ -15,17 +17,12 @@ test_repl.py          ← 17개 REPL 시나리오 (TEST_SCENARIOS dict)
          Neo4j 직접 연결, LLM 없이 slot 직접 주입
 
 공유 의존성:
-  flow.py      ← FlowEngine (전이, slot 추출, 응답 생성)
+  flow/        ← FlowEngine (전이, slot 추출, 응답 생성)
   state.py     ← ConversationState (세션 상태)
-  schema.py    ← BRANCHING_RULES, CONDITIONAL_SKIP_RULES,
+  config/      ← BRANCHING_RULES, CONDITIONAL_SKIP_RULES,
                   AUTO_COMPUTABLE_SLOTS, SYSTEM_MANAGED_SLOTS
+  schema/      ← Cypher 쿼리 상수
   core.py      ← Core (Neo4j + OpenAI 통합) — benchmark에서만 사용
-
-관련 문서:
-  benchmark_analysis.md      V1 리포트 (gpt-5, 23.5초/턴)
-  benchmark_analysis_v2.md   V2 리포트 (gpt-4o+mini, 5.8초/턴)
-  REPL_SCENARIOS_DETAIL.md   17개 REPL 시나리오 상세 (엑셀 판단기준 커버리지 포함)
-  SESSION_CHANGELOG.md       Graph 정합성 검증 & Tier 1 최적화 변경 이력
 ```
 
 ## 실행 방법
