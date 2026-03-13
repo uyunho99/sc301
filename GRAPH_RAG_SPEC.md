@@ -256,7 +256,7 @@ p2InformSurgery [inform]  ← upsellAccept 분기
 
 ### P3 skinTreatment (피부시술)
 
-> 가슴성형 전후 피부관리를 목적으로 시술을 고려하는 고객. 가슴 수술 후 피부 탄력 회복, 흉터 관리 등을 중시하며, 과거 시술 경험이 있는 경우도 많아 기존 시술과의 관계에 민감함. 복잡한 의학 설명보다는 쉽고 직관적인 비교 설명을 선호함.
+> 얼굴·바디 등 다양한 부위의 피부 안티에이징 시술을 고려하는 고객. 팔자주름, 볼 꺼짐, 피부 탄력 저하 등의 개선을 중시하며, 과거 시술 경험이 있는 경우도 많아 기존 시술과의 관계에 민감함. 복잡한 의학 설명보다는 쉽고 직관적인 비교 설명을 선호함.
 
 **시나리오**: `scenAntiAging`
 **추천 프로그램**: `faceAntiAgingProgram`
@@ -285,7 +285,7 @@ p3Confirm [confirm]  → END
 | **p3Collect** | `bodyInfo` | 키/체중 | 170cm 65kg |
 | | `bodyFat` | 체지방률 | 25% |
 | | `skinType` | 피부 타입 | 건성, 지성, 복합성, 민감성 |
-| | `skinCondition` | 피부 상태 | 가슴 부위 탄력 저하, 수술 후 흉터 |
+| | `skinCondition` | 피부 상태 | 팔자주름 깊어짐, 볼 꺼짐, 피부 탄력 저하 |
 | **p3AskLifestyle** | `activityPattern` | 활동 패턴 | 사무직, 활동적 |
 | | `skincareRoutine` | 스킨케어 루틴 | 기초만, 풀코스, 거의 안 함 |
 | | `smoking` | 흡연 여부 | true / false |
@@ -296,8 +296,8 @@ p3Confirm [confirm]  → END
 | | `fillerRemaining` | 필러 잔여량 | 거의 흡수됨, 일부 남음 |
 | | `pastOps` | 과거 수술 이력 | (자유 텍스트) |
 | | `pastOpsSite` | 과거 수술 부위 | (자유 텍스트) |
-| **p3AskSurgery** | `concernArea` | 관심 부위 | 가슴 부위 수술 전후 피부 |
-| | `desiredEffect` | 희망 효과 | 수술 후 피부 탄력 회복, 흉터 최소화 |
+| **p3AskSurgery** | `concernArea` | 관심 부위 | 팔자주름, 볼 볼륨 회복 |
+| | `desiredEffect` | 희망 효과 | 동안 느낌, 피부 탄력 회복, 자연스러운 볼륨 |
 | | `durabilityExpectation` | 지속 기간 기대 | 6개월 이상, 1년, 반영구 |
 | **p3InformSugery** | *(정보 제공 단계)* | | |
 | **p3Confirm** | `customerName` | 고객 성함 | (이름) |
@@ -310,7 +310,7 @@ p3Confirm [confirm]  → END
 
 ### P4 longDistance (원거리)
 
-> 해외 또는 국내 원거리 거주로 병원 방문이 제한적인 여성 고객. 가슴 줄기세포 지방이식을 위해 상담-검사-시술-사후관리까지 일정 효율 최적화를 최우선으로 고려함. 체류 기간을 빠르게 확정하고, 원격 환자 프로토콜(Remote Patient Protocol)을 통해 국내 고객과 동등한 생착률을 보장받는 맞춤 프로그램을 원함.
+> 해외 또는 국내 원거리 거주로 병원 방문이 제한적인 여성 고객. 다양한 성형·시술을 위해 상담-검사-시술-사후관리까지 일정 효율 최적화를 최우선으로 고려함. 체류 기간을 빠르게 확정하고, 원격 환자 프로토콜(Remote Patient Protocol)을 통해 국내 고객과 동등한 시술 결과를 보장받는 맞춤 프로그램을 원함.
 
 **시나리오**: `scenRemote`
 **추천 프로그램**: `longDistanceProgram`
@@ -509,8 +509,8 @@ p5Confirm [confirm]  → END
 | Slot | 설명 | 입력 힌트 | 사용 페르소나 |
 |------|------|-----------|-------------|
 | `fatSourceAvailability` | 지방 채취 가능 부위/량 | 복부 충분, 허벅지 소량 | P1, P2, P3, P4, P5 |
-| `pastOps` | 과거 수술 이력 | 가슴 확대 1회, 없음 | P1, P2, P3, P4, P5 |
-| `pastOpsSite` | 과거 수술 부위 | 가슴, 가슴 좌측, 가슴 양측 | P1, P3, P4, P5 |
+| `pastOps` | 과거 수술 이력 | 필러 3회, 보톡스 2회, 가슴 확대 1회, 없음 | P1, P2, P3, P4, P5 |
+| `pastOpsSite` | 과거 수술 부위 | 얼굴, 이마, 가슴, 가슴 좌측 | P1, P3, P4, P5 |
 | `smoking` | 흡연 여부 | true/false | P2, P3, P4, P5 |
 
 ### 공통 생활습관
@@ -650,8 +650,8 @@ p5Confirm [confirm]  → END
 | `lipoStandalone` | P2 (lipoCustomer) | 불필요 지방 제거로 라인 개선. 압박복/관리 안내 포함 |
 | `lipoGraftCombined` | P2 (lipoCustomer) | 흡입으로 채취 후, 가슴 볼륨 보완을 위한 이식 |
 | `stemCellGraft` | P2 (lipoCustomer) | 지방 채취 → 농축/처리 → 주입. 생착률/유지력 중심 |
-| `faceAntiAgingProgram` | P3 (skinTreatment) | 가슴성형 전후 피부관리 (탄력 회복/흉터 관리/피부 재생) 맞춤 프로그램 |
-| `longDistanceProgram` | P4 (longDistance) | 원격 사전 준비 + 일정 압축 설계 (동등 생착률 목표) |
+| `faceAntiAgingProgram` | P3 (skinTreatment) | 얼굴·피부 맞춤 안티에이징 (탄력 회복/볼륨 개선/피부 재생) 프로그램 |
+| `longDistanceProgram` | P4 (longDistance) | 원격 사전 준비 + 일정 압축 설계 (동등 시술 결과 목표) |
 | `revisionGraftProgram` | P5 (revisionFatigue) | 제거-이식-사후관리 통합 설계 재수술 맞춤 프로그램 |
 
 ### 프로그램별 부작용

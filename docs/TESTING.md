@@ -276,7 +276,7 @@ python benchmark_scenarios.py --db local -s p1std --csv result.csv
 
 ---
 
-### #8. P3-FULL — 피부시술 가슴성형 전후 피부관리
+### #8. P3-FULL — 피부시술 얼굴 안티에이징
 
 > **경로**: p3Collect → p3AskLifestyle → p3AskDetail → p3AskSurgery → p3InformSugery → p3Confirm
 > **분기**: 없음 (단일 선형 경로)
@@ -284,12 +284,12 @@ python benchmark_scenarios.py --db local -s p1std --csv result.csv
 
 | Turn | Step | 입력 내용 | 추출 Slots | 비고 |
 |------|------|----------|-----------|------|
-| 1 | p3Collect | "162cm 50kg이고 체지방 22%예요. 건성 피부에 가슴 부위 탄력 저하가 고민이에요." | `bodyInfo`=162cm 50kg, `bodyFat`=22, `skinType`=건성, `skinCondition`=가슴 부위 탄력 저하 | BMI 19.1 자동계산 |
+| 1 | p3Collect | "162cm 50kg이고 체지방 22%예요. 건성 피부에 팔자주름이 깊어지고 볼이 꺼져서 고민이에요." | `bodyInfo`=162cm 50kg, `bodyFat`=22, `skinType`=건성, `skinCondition`=팔자주름 깊어짐, 볼 꺼짐 | BMI 19.1 자동계산 |
 | 2 | p3AskLifestyle | "요가 주2회 하고요. 야외 근무라 자외선 노출이 많아요. 기초 화장품만 쓰고 담배는 안 펴요." | `activityPattern`=요가 주2회, `sunExposure`=높음 (야외 근무), `skincareRoutine`=기초 화장품만 사용, `smoking`=false | |
 | 3 | p3AskDetail | "허벅지 지방 있고 필러 잔여물 없어요. 알레르기 없고 보톡스 3회 맞았어요. 이마 눈가에 맞았고 6개월 주기로 했습니다." | `fatSourceAvailability`=허벅지, `fillerRemaining`=false, `allergyHistory`=없음, `pastOps`=보톡스 3회, `pastOpsSite`=이마, 눈가, `botoxCycle`=6개월 주기 | pastOps≠"없음" → pastOpsSite 수집 |
-| 4 | p3AskSurgery | "가슴 부위 수술 전후 피부가 고민이에요. 수술 후 피부 탄력 회복 원하고 1년 이상 지속되면 좋겠어요." | `concernArea`=가슴 부위 수술 전후 피부, `desiredEffect`=수술 후 피부 탄력 회복, `durabilityExpectation`=1년 이상 | |
+| 4 | p3AskSurgery | "팔자주름 개선이랑 볼 볼륨 회복이 고민이에요. 동안 느낌의 자연스러운 효과 원하고 1년 이상 지속되면 좋겠어요." | `concernArea`=팔자주름, 볼 볼륨 회복, `desiredEffect`=동안 느낌 자연스러운 효과, `durabilityExpectation`=1년 이상 | |
 | - | p3InformSugery | *(자동 전이)* | - | CheckItem 없음 |
-| 5 | p3Confirm | "최윤아예요. 010-4444-5555입니다. 이번달 내에 하고 싶고 다음주 수요일 방문 가능해요. 가슴성형 전후 피부관리로 계획이에요." | `customerName`=최윤아, `phoneNumber`=010-4444-5555, `surgeryWindow`=이번달 내, `visitSchedule`=다음주 수요일, `procedurePlan`=가슴성형 전후 피부관리 | 종료 |
+| 5 | p3Confirm | "최윤아예요. 010-4444-5555입니다. 이번달 내에 하고 싶고 다음주 수요일 방문 가능해요. 필러 + 리프팅 결합 시술로 계획이에요." | `customerName`=최윤아, `phoneNumber`=010-4444-5555, `surgeryWindow`=이번달 내, `visitSchedule`=다음주 수요일, `procedurePlan`=필러 + 리프팅 결합 시술 | 종료 |
 
 ---
 
@@ -308,7 +308,7 @@ python benchmark_scenarios.py --db local -s p1std --csv result.csv
 | 3 | p3AskDetail | "허벅지에 지방 있고 필러 잔여물이 아직 좀 남아있어요. 알레르기 없고 필러 5회, 보톡스 4회 맞았어요. 팔자주름이랑 이마에 맞았고 4개월 주기로 했었어요." | `fatSourceAvailability`=허벅지, `fillerRemaining`=약간 남아있음, `allergyHistory`=없음, `pastOps`=필러 5회, 보톡스 4회, `pastOpsSite`=팔자주름, 이마, `botoxCycle`=4개월 주기 | 필러 잔여량 **있음** |
 | 4 | p3AskSurgery | "팔자주름 개선이 제일 급하고 볼 볼륨도 채우고 싶어요. 동안 느낌으로 자연스러운 효과 원하고 최소 2년은 유지되면 좋겠어요." | `concernArea`=팔자주름, 볼 볼륨, `desiredEffect`=동안 느낌 자연스러운 효과, `durabilityExpectation`=최소 2년 | |
 | - | p3InformSugery | *(자동 전이)* | - | CheckItem 없음 |
-| 5 | p3Confirm | "김예진이에요. 010-7654-3210이요. 다음달 초에 하고 싶고 이번주 금요일 방문 가능해요. 줄기세포 지방이식이랑 리프팅 결합으로요." | `customerName`=김예진, `phoneNumber`=010-7654-3210, `surgeryWindow`=다음달 초, `visitSchedule`=이번주 금요일, `procedurePlan`=줄기세포 지방이식 + 리프팅 | 종료 |
+| 5 | p3Confirm | "김예진이에요. 010-7654-3210이요. 다음달 초에 하고 싶고 이번주 금요일 방문 가능해요. 필러 + 리프팅 결합으로요." | `customerName`=김예진, `phoneNumber`=010-7654-3210, `surgeryWindow`=다음달 초, `visitSchedule`=이번주 금요일, `procedurePlan`=필러 + 리프팅 결합 시술 | 종료 |
 
 ---
 

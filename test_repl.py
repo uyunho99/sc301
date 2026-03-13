@@ -326,27 +326,27 @@ TEST_SCENARIOS = {
     # =========================================================================
 
     "p3": {
-        "name": "P3 피부시술 - 가슴성형 전후 피부관리 + 줄기세포 안티에이징 (선형)",
+        "name": "P3 피부시술 - 얼굴 안티에이징 상담 (선형)",
         "persona": "skinTreatment",
         "scenario": "scenAntiAging",
-        "initial_utterance": "가슴 줄기세포 지방이식을 고려하고 있는데, 수술 전후 가슴 피부 탄력이랑 흉터 관리도 같이 상담받고 싶어요.",
+        "initial_utterance": "팔자주름이랑 볼 꺼짐이 고민인데 피부 시술 상담받고 싶어요. 리프팅이나 필러 같은 비수술 시술이 궁금해요.",
         "expected_path": [
             "p3Collect", "p3AskLifestyle", "p3AskDetail",
             "p3AskSurgery", "p3InformSugery", "p3Confirm",
         ],
         "branch_info": "분기 없음 (선형)",
         "turns": [
-            {"step": "p3Collect", "utterance": "162cm 50kg이고 체지방 22%예요. 건성 피부에 가슴 부위 탄력 저하가 고민이에요.",
-             "slots": {"bodyInfo": "162cm 50kg", "bodyFat": "22", "skinType": "건성", "skinCondition": "가슴 부위 탄력 저하, 흉터 우려"}},
+            {"step": "p3Collect", "utterance": "162cm 50kg이고 체지방 22%예요. 건성 피부에 팔자주름이 깊어지고 볼이 꺼져서 고민이에요.",
+             "slots": {"bodyInfo": "162cm 50kg", "bodyFat": "22", "skinType": "건성", "skinCondition": "팔자주름 깊어짐, 볼 꺼짐"}},
             {"step": "p3AskLifestyle", "utterance": "요가 주2회 하고요. 야외 근무라 자외선 노출이 많아요. 기초 화장품만 쓰고 담배는 안 펴요.",
              "slots": {"activityPattern": "요가 주2회", "sunExposure": "높음", "skincareRoutine": "기초 화장품만 사용", "smoking": "false"}},
-            {"step": "p3AskDetail", "utterance": "허벅지 지방 있고 필러 잔여물 없어요. 알레르기 없고 가슴 관련 보톡스 경험은 없어요. 과거 시술 없고 보톡스 주기도 없습니다.",
+            {"step": "p3AskDetail", "utterance": "허벅지 지방 있고 필러 잔여물 없어요. 알레르기 없고 과거 시술 없고 보톡스 경험도 없습니다.",
              "slots": {"fatSourceAvailability": "허벅지", "fillerRemaining": "false", "allergyHistory": "없음", "pastOps": "없음", "pastOpsSite": "없음", "botoxCycle": "없음"}},
-            {"step": "p3AskSurgery", "utterance": "가슴 지방이식 후 피부 탄력 개선이 고민이에요. 자연스러운 가슴 라인과 피부결 효과 원하고 1년 이상 지속되면 좋겠어요.",
-             "slots": {"concernArea": "가슴 피부 탄력, 수술 후 흉터", "desiredEffect": "자연스러운 가슴 라인 + 피부결 개선", "durabilityExpectation": "1년 이상"}},
+            {"step": "p3AskSurgery", "utterance": "팔자주름 개선이랑 볼 볼륨 회복이 제일 급해요. 동안 느낌의 자연스러운 효과 원하고 1년 이상 지속되면 좋겠어요.",
+             "slots": {"concernArea": "팔자주름, 볼 볼륨 회복", "desiredEffect": "동안 느낌 + 자연스러운 볼륨 회복", "durabilityExpectation": "1년 이상"}},
             # p3InformSugery: no checks
-            {"step": "p3Confirm", "utterance": "최윤아예요. 010-4444-5555입니다. 이번달 내에 하고 싶고 다음주 수요일 방문 가능해요. 줄기세포 지방이식 + 피부 탄력 시술 계획이에요.",
-             "slots": {"customerName": "최윤아", "phoneNumber": "010-4444-5555", "surgeryWindow": "이번달 내", "visitSchedule": "다음주 수요일", "procedurePlan": "줄기세포 지방이식 + 피부 탄력 시술"}},
+            {"step": "p3Confirm", "utterance": "최윤아예요. 010-4444-5555입니다. 이번달 내에 하고 싶고 다음주 수요일 방문 가능해요. 필러 + 리프팅 결합 시술 계획이에요.",
+             "slots": {"customerName": "최윤아", "phoneNumber": "010-4444-5555", "surgeryWindow": "이번달 내", "visitSchedule": "다음주 수요일", "procedurePlan": "필러 + 리프팅 결합 시술"}},
         ],
     },
 
@@ -359,10 +359,10 @@ TEST_SCENARIOS = {
     # =========================================================================
 
     "p4abroad": {
-        "name": "P4 원거리 - 해외 (FULL 프로토콜, 가슴 줄기세포 지방이식)",
+        "name": "P4 원거리 - 해외 (FULL 프로토콜)",
         "persona": "longDistance",
         "scenario": "scenRemote",
-        "initial_utterance": "해외에 살고 있는데 한국에서 가슴 줄기세포 지방이식 받으려고요. 원거리 상담 가능할까요?",
+        "initial_utterance": "해외에 살고 있는데 한국에서 성형 시술 받으려고요. 원거리 상담 가능할까요?",
         "expected_path": [
             "p4PreCollect", "p4Collect", "p4AskLifestyle", "p4AskDetail",
             "p4InformSurgery", "p4InformInfo", "p4Confirm", "p4Finalize",
@@ -375,7 +375,7 @@ TEST_SCENARIOS = {
              "slots": {"bodyInfo": "163cm 55kg", "bodyFat": "24", "inbodyAvailable": "false"}},
             {"step": "p4AskLifestyle", "utterance": "주 3회 요가하고 중간 강도예요. 담배 안 피고 3주 회복 가능합니다.",
              "slots": {"activityPattern": "주3회 요가", "exerciseLevel": "중간", "smoking": "false", "recoveryAllowance": "3주"}},
-            {"step": "p4AskDetail", "utterance": "복부에서 지방 채취 가능하고 가슴 관련 시술 이력 없어요.",
+            {"step": "p4AskDetail", "utterance": "복부에서 지방 채취 가능하고 성형 시술 이력 없어요.",
              "slots": {"fatSourceAvailability": "복부", "pastOps": "없음", "pastOpsSite": "없음"}},
             # p4InformSurgery: no checks
             {"step": "p4InformInfo", "utterance": "사전검사 2시간 예상하고 체형 사진이랑 서류 업로드했어요.",
@@ -388,10 +388,10 @@ TEST_SCENARIOS = {
     },
 
     "p4semi": {
-        "name": "P4 원거리 - 부산 (SEMI-REMOTE 프로토콜, 가슴 지방이식)",
+        "name": "P4 원거리 - 부산 (SEMI-REMOTE 프로토콜)",
         "persona": "longDistance",
         "scenario": "scenRemote",
-        "initial_utterance": "부산에서 서울까지 가야 하는데 가슴 줄기세포 지방이식 원거리 상담 가능할까요?",
+        "initial_utterance": "부산에서 서울까지 가야 하는데 성형 시술 원거리 상담 가능할까요?",
         "expected_path": [
             "p4PreCollect", "p4Collect", "p4AskLifestyle", "p4AskDetail",
             "p4InformSurgery", "p4InformInfo", "p4Confirm", "p4Finalize",
@@ -404,7 +404,7 @@ TEST_SCENARIOS = {
              "slots": {"bodyInfo": "162cm 56kg", "bodyFat": "25", "inbodyAvailable": "true", "inbodyPhotoUpload": "uploaded"}},
             {"step": "p4AskLifestyle", "utterance": "주3회 필라테스 다니고 중간 강도예요. 비흡연이고 2주 회복 가능합니다.",
              "slots": {"activityPattern": "주3회 필라테스", "exerciseLevel": "중간", "smoking": "false", "recoveryAllowance": "2주"}},
-            {"step": "p4AskDetail", "utterance": "복부 허벅지에서 채취 가능. 가슴 시술 이력 없습니다.",
+            {"step": "p4AskDetail", "utterance": "복부 허벅지에서 채취 가능. 성형 시술 이력 없습니다.",
              "slots": {"fatSourceAvailability": "복부, 허벅지", "pastOps": "없음", "pastOpsSite": "없음"}},
             # p4InformSurgery: no checks
             {"step": "p4InformInfo", "utterance": "사전검사 1시간이면 되고 사진 서류 다 올렸어요.",
@@ -417,10 +417,10 @@ TEST_SCENARIOS = {
     },
 
     "p4std": {
-        "name": "P4 원거리 - 서울 (STANDARD 프로토콜, 가슴 지방이식)",
+        "name": "P4 원거리 - 서울 (STANDARD 프로토콜)",
         "persona": "longDistance",
         "scenario": "scenRemote",
-        "initial_utterance": "서울 사는데 가슴 줄기세포 지방이식 상담 받으려고요. 내원 상담이 가능한지 궁금해요.",
+        "initial_utterance": "서울 사는데 성형 시술 상담 받으려고요. 내원 상담이 가능한지 궁금해요.",
         "expected_path": [
             "p4PreCollect", "p4Collect", "p4AskLifestyle", "p4AskDetail",
             "p4InformSurgery", "p4InformInfo", "p4Confirm", "p4Finalize",
@@ -433,7 +433,7 @@ TEST_SCENARIOS = {
              "slots": {"bodyInfo": "160cm 52kg", "bodyFat": "23", "inbodyAvailable": "true", "inbodyPhotoUpload": "uploaded"}},
             {"step": "p4AskLifestyle", "utterance": "주3회 러닝하고 중간 강도예요. 비흡연이고 2주 회복 가능합니다.",
              "slots": {"activityPattern": "주3회 러닝", "exerciseLevel": "중간", "smoking": "false", "recoveryAllowance": "2주"}},
-            {"step": "p4AskDetail", "utterance": "복부 지방 충분하고 가슴 관련 시술 이력 없어요.",
+            {"step": "p4AskDetail", "utterance": "복부 지방 충분하고 성형 시술 이력 없어요.",
              "slots": {"fatSourceAvailability": "복부 충분", "pastOps": "없음", "pastOpsSite": "없음"}},
             # p4InformSurgery: no checks
             {"step": "p4InformInfo", "utterance": "사전검사 30분이면 되고 사진 서류 준비됐어요.",
@@ -606,36 +606,36 @@ TEST_SCENARIOS = {
 
     # ── P3 필러 이력자 (엑셀 §3.5 과거 시술 경험 식별 질문) ────────────
     "p3_filler_exp": {
-        "name": "P3 피부시술 - 가슴성형 고려 중 피부관리 이력자 (선형)",
+        "name": "P3 피부시술 - 필러/보톡스 경험자 얼굴 안티에이징 (선형)",
         "persona": "skinTreatment",
         "scenario": "scenAntiAging",
-        "initial_utterance": "가슴 줄기세포 지방이식 전에 피부 탄력 관리를 하고 싶어요. 필러는 해봤는데 더 오래 유지되는 방법이 있을까요?",
+        "initial_utterance": "얼굴 피부 탄력 관리를 하고 싶어요. 필러는 해봤는데 더 오래 유지되는 방법이 있을까요?",
         "expected_path": [
             "p3Collect", "p3AskLifestyle", "p3AskDetail",
             "p3AskSurgery", "p3InformSugery", "p3Confirm",
         ],
         "branch_info": "분기 없음 (선형) [필러/보톡스 경험자]",
         "turns": [
-            {"step": "p3Collect", "utterance": "167cm 54kg이고 체지방 20%예요. 복합성 피부에 가슴 피부 탄력이 떨어지는 게 고민이고 수술 흉터도 걱정이에요.",
-             "slots": {"bodyInfo": "167cm 54kg", "bodyFat": "20", "skinType": "복합성", "skinCondition": "가슴 피부 탄력 저하, 수술 흉터 우려"}},
+            {"step": "p3Collect", "utterance": "167cm 54kg이고 체지방 20%예요. 복합성 피부에 볼 꺼짐이랑 팔자주름이 깊어지는 게 고민이에요.",
+             "slots": {"bodyInfo": "167cm 54kg", "bodyFat": "20", "skinType": "복합성", "skinCondition": "볼 꺼짐, 팔자주름 깊어짐"}},
             {"step": "p3AskLifestyle", "utterance": "필라테스 주 3회 해요. 실내 근무라 자외선 노출 적은 편이고 스킨케어 루틴이 있어요. 비흡연이에요.",
              "slots": {"activityPattern": "필라테스 주3회", "sunExposure": "낮음", "skincareRoutine": "스킨케어 루틴 있음", "smoking": "false"}},
             {"step": "p3AskDetail", "utterance": "허벅지에 지방 있고 필러 잔여물이 아직 좀 남아있어요. 알레르기 없고 필러 5회, 보톡스 4회 맞았어요. 팔자주름이랑 이마에 맞았고 4개월 주기로 했었어요.",
              "slots": {"fatSourceAvailability": "허벅지", "fillerRemaining": "약간 남아있음", "allergyHistory": "없음", "pastOps": "필러 5회, 보톡스 4회", "pastOpsSite": "팔자주름, 이마", "botoxCycle": "4개월 주기"}},
-            {"step": "p3AskSurgery", "utterance": "가슴 지방이식 후 피부 탄력 개선이 제일 급하고 흉터 관리도 하고 싶어요. 자연스러운 가슴 라인과 피부 탄력 효과 원하고 최소 2년은 유지되면 좋겠어요.",
-             "slots": {"concernArea": "가슴 피부 탄력, 수술 후 흉터 관리", "desiredEffect": "자연스러운 가슴 라인 + 피부 탄력", "durabilityExpectation": "최소 2년"}},
+            {"step": "p3AskSurgery", "utterance": "팔자주름 개선이랑 볼 볼륨 회복이 제일 급해요. 자연스러운 동안 느낌과 피부 탄력 효과 원하고 최소 2년은 유지되면 좋겠어요.",
+             "slots": {"concernArea": "팔자주름, 볼 볼륨 회복", "desiredEffect": "동안 느낌 + 피부 탄력 회복", "durabilityExpectation": "최소 2년"}},
             # p3InformSugery: no checks
-            {"step": "p3Confirm", "utterance": "김예진이에요. 010-7654-3210이요. 다음달 초에 하고 싶고 이번주 금요일 방문 가능해요. 줄기세포 지방이식이랑 리프팅 결합으로요.",
-             "slots": {"customerName": "김예진", "phoneNumber": "010-7654-3210", "surgeryWindow": "다음달 초", "visitSchedule": "이번주 금요일", "procedurePlan": "가슴 줄기세포 지방이식 + 피부 탄력 시술"}},
+            {"step": "p3Confirm", "utterance": "김예진이에요. 010-7654-3210이요. 다음달 초에 하고 싶고 이번주 금요일 방문 가능해요. 필러 + 리프팅 결합 시술로요.",
+             "slots": {"customerName": "김예진", "phoneNumber": "010-7654-3210", "surgeryWindow": "다음달 초", "visitSchedule": "이번주 금요일", "procedurePlan": "필러 + 리프팅 결합 시술"}},
         ],
     },
 
     # ── P4 국내 원거리 - 대전 S3 (엑셀 §4.4 Step 1 권역 식별) ─────────
     "p4semi_s3": {
-        "name": "P4 원거리 - 대전 (SEMI-REMOTE S3 프로토콜, 가슴 지방이식)",
+        "name": "P4 원거리 - 대전 (SEMI-REMOTE S3 프로토콜)",
         "persona": "longDistance",
         "scenario": "scenRemote",
-        "initial_utterance": "대전에서 사는데 가슴 줄기세포 지방이식 때문에 서울 내원이 부담돼요. 원거리 상담 가능한가요?",
+        "initial_utterance": "대전에서 사는데 성형 시술 때문에 서울 내원이 부담돼요. 원거리 상담 가능한가요?",
         "expected_path": [
             "p4PreCollect", "p4Collect", "p4AskLifestyle", "p4AskDetail",
             "p4InformSurgery", "p4InformInfo", "p4Confirm", "p4Finalize",
@@ -648,7 +648,7 @@ TEST_SCENARIOS = {
              "slots": {"bodyInfo": "160cm 53kg", "bodyFat": "22", "inbodyAvailable": "false"}},
             {"step": "p4AskLifestyle", "utterance": "주2회 수영하고 중간 강도예요. 비흡연이고 1주 회복 가능합니다.",
              "slots": {"activityPattern": "주2회 수영", "exerciseLevel": "중간", "smoking": "false", "recoveryAllowance": "1주"}},
-            {"step": "p4AskDetail", "utterance": "허벅지에서 지방 채취 가능하고 가슴 시술 이력 없습니다.",
+            {"step": "p4AskDetail", "utterance": "허벅지에서 지방 채취 가능하고 성형 시술 이력 없습니다.",
              "slots": {"fatSourceAvailability": "허벅지", "pastOps": "없음", "pastOpsSite": "없음"}},
             # p4InformSurgery: no checks
             {"step": "p4InformInfo", "utterance": "사전검사 1시간이면 되고 사진이랑 서류 업로드했어요.",

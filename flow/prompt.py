@@ -28,12 +28,22 @@ from ._helpers import iter_pending_checks
 logger = logging.getLogger(__name__)
 
 
+_PERSONA_SYSTEM_CONTEXT: dict[str, str] = {
+    "slimBody":        "당신은 가슴성형(줄기세포 지방이식, 보형물 등) 전문 상담 챗봇입니다. 모든 상담은 여성 고객 대상 가슴성형 맥락에서 진행됩니다.",
+    "lipoCustomer":    "당신은 가슴성형(줄기세포 지방이식, 보형물 등) 전문 상담 챗봇입니다. 모든 상담은 여성 고객 대상 가슴성형 맥락에서 진행됩니다.",
+    "revisionFatigue": "당신은 가슴성형(줄기세포 지방이식, 보형물 등) 전문 상담 챗봇입니다. 모든 상담은 여성 고객 대상 가슴성형 맥락에서 진행됩니다.",
+    "skinTreatment":   "당신은 미용 피부시술(필러, 보톡스, 리프팅, 레이저 등) 전문 상담 챗봇입니다. 얼굴, 목, 바디 등 다양한 부위의 비수술 피부 시술 상담을 진행합니다.",
+    "longDistance":    "당신은 미용 성형외과 전문 상담 챗봇입니다. 해외·원거리 거주 고객의 다양한 성형·시술(가슴, 얼굴, 바디, 피부 등) 상담을 진행합니다.",
+}
+_DEFAULT_SYSTEM_CONTEXT = "당신은 미용 성형외과 전문 상담 챗봇입니다."
+
+
 class PromptMixin:
     """프롬프트 빌더 Mixin"""
 
     def _build_persona_context(self, state: ConversationState) -> str:
         """페르소나 + 시나리오 + 상담톤 컨텍스트 문자열 생성"""
-        parts = ["당신은 가슴성형(줄기세포 지방이식, 보형물 등) 전문 상담 챗봇입니다. 모든 상담은 여성 고객 대상 가슴성형 맥락에서 진행됩니다."]
+        parts = [_PERSONA_SYSTEM_CONTEXT.get(state.persona_id, _DEFAULT_SYSTEM_CONTEXT)]
 
         if state.persona_id:
             persona = self.get_persona(state.persona_id)

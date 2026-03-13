@@ -435,7 +435,7 @@ def test_persona3_full(engine: FlowEngine):
             "bodyInfo": "162cm 50kg",
             "bodyFat": "22",
             "skinType": "건성",
-            "skinCondition": "가슴 부위 탄력 저하, 흉터 우려",
+            "skinCondition": "팔자주름 깊어짐, 볼 꺼짐",
         },
         "p3AskLifestyle": {
             "activityPattern": "요가 주2회",
@@ -452,8 +452,8 @@ def test_persona3_full(engine: FlowEngine):
             "botoxCycle": "6개월 주기",
         },
         "p3AskSurgery": {
-            "concernArea": "가슴 피부 탄력, 수술 후 흉터",
-            "desiredEffect": "자연스러운 가슴 라인 + 피부결 개선",
+            "concernArea": "팔자주름, 볼 볼륨 회복",
+            "desiredEffect": "동안 느낌 + 자연스러운 볼륨 회복",
             "durabilityExpectation": "1년 이상",
         },
         # p3InformSugery: checks 없음
@@ -462,7 +462,7 @@ def test_persona3_full(engine: FlowEngine):
             "phoneNumber": "010-4444-5555",
             "surgeryWindow": "이번달 내",
             "visitSchedule": "다음주 수요일",
-            "procedurePlan": "줄기세포 지방이식 + 피부 탄력 시술",
+            "procedurePlan": "필러 + 리프팅 결합 시술",
         },
     }
 

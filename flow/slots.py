@@ -266,7 +266,15 @@ class SlotMixin:
         if not variables:
             return state
 
-        prompt = f"""가슴성형 상담 정보 추출. 사용자 발화에서 해당 항목의 값을 추출하세요.
+        _EXTRACTION_DOMAIN: dict[str, str] = {
+            "slimBody": "가슴성형 상담",
+            "lipoCustomer": "가슴성형 상담",
+            "revisionFatigue": "가슴성형 상담",
+            "skinTreatment": "미용 피부시술 상담",
+            "longDistance": "미용 성형 상담",
+        }
+        domain = _EXTRACTION_DOMAIN.get(state.persona_id, "미용 성형 상담")
+        prompt = f"""{domain} 정보 추출. 사용자 발화에서 해당 항목의 값을 추출하세요.
 
 규칙:
 - 사용자가 전혀 언급하지 않은 항목은 반드시 null (JSON null, 문자열 "null" 금지)
